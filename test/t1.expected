@@ -1,2 +1,2 @@
-
-
+tokens: [struct_begin("Foo");field_begin("x",I32,1);42l;field_end;
+         field_begin("y",BOOL,2);true;field_end;struct_end]

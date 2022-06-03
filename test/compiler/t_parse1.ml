@@ -1,10 +1,35 @@
 module Fmt = CCFormat
 
-let s1 = {|
-{ "a": 1, "b": 2}
+module T1 = struct
+  let s = {|
+  // hello
+-24
+|}
+
+  let c = Parser.parse_string Parser.const_value s;;
+
+  Fmt.printf "c = %a@." (Fmt.Dump.result Ast.Const_value.pp) c
+end
+
+module T2 = struct
+  let s = {|
+  // hello
+  "world!"
+|}
+
+  let c = Parser.parse_string Parser.const_value s;;
+
+  Fmt.printf "c = %a@." (Fmt.Dump.result Ast.Const_value.pp) c
+end
+
+module T3 = struct
+  let s = {|
+{ "x": 1, "is_nice?": true,
+      "b": /* 1+1= */ 2}
 
 |}
 
-let c1 = Parser.parse_string Parser.const_value s1;;
+  let c = Parser.parse_string Parser.const_value s;;
 
-Fmt.printf "parsed %a@." (Fmt.Dump.result Ast.Const_value.pp) c1
+  Fmt.printf "c = %a@." (Fmt.Dump.result Ast.Const_value.pp) c
+end
