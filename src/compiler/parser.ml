@@ -68,9 +68,10 @@ let bool_const_ =
 let optional_ p = p <|> return ()
 
 let list_sep_ =
-  char_if ~descr:"list separator" (function
-    | ',' | ';' -> true
-    | _ -> false)
+  skip_white
+  *> char_if ~descr:"list separator" (function
+       | ',' | ';' -> true
+       | _ -> false)
   *> return ()
 
 let map_const_ self =

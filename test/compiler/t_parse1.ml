@@ -35,6 +35,13 @@ module T3 = struct
 end
 
 module T4 = struct
+  let s = {| true |}
+  let c = Parser.parse_string Parser.const_value s;;
+
+  Fmt.printf "c = %a@." (Fmt.Dump.result Ast.Const_value.pp) c
+end
+
+module T5 = struct
   let s =
     {|
   [ true ; // oh yeah
