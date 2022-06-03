@@ -1,0 +1,4 @@
+(tests
+ (libraries smol_thrift containers)
+ (flags :standard -open Smol_thrift)
+ (names t1))

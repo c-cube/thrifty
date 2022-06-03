@@ -1,0 +1,4 @@
+(tests
+ (names t_parse1)
+ (flags :standard -open Smol_thrift.Types -open Smol_thrift_compiler_lib)
+ (libraries containers smol_thrift smol_thrift_compiler.lib))
