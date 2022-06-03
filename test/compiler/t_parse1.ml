@@ -1,6 +1,6 @@
 module Fmt = CCFormat
 
-module T1 = struct
+module P_const1 = struct
   let s = {|
   // hello
 -24
@@ -11,7 +11,7 @@ module T1 = struct
   Fmt.printf "c = %a@." (Fmt.Dump.result Ast.Const_value.pp) c
 end
 
-module T2 = struct
+module P_const2 = struct
   let s = {|
   // hello
   "world!"
@@ -22,7 +22,7 @@ module T2 = struct
   Fmt.printf "c = %a@." (Fmt.Dump.result Ast.Const_value.pp) c
 end
 
-module T3 = struct
+module P_const3 = struct
   let s = {|
 { "x": 1, "is_nice?": true,
       "b": /* 1+1= */ 2}
@@ -34,14 +34,14 @@ module T3 = struct
   Fmt.printf "c = %a@." (Fmt.Dump.result Ast.Const_value.pp) c
 end
 
-module T4 = struct
+module P_const4 = struct
   let s = {| true |}
   let c = Parser.parse_string Parser.const_value s;;
 
   Fmt.printf "c = %a@." (Fmt.Dump.result Ast.Const_value.pp) c
 end
 
-module T5 = struct
+module P_const5 = struct
   let s =
     {|
   [ true ; // oh yeah
@@ -53,4 +53,14 @@ module T5 = struct
   let c = Parser.parse_string Parser.const_value s;;
 
   Fmt.printf "c = %a@." (Fmt.Dump.result Ast.Const_value.pp) c
+end
+
+module P_field_ty1 = struct
+  let s = {|
+    list< map< bool, /* int!! */ i32> >
+] |}
+
+  let ty = Parser.parse_string Parser.field_type s;;
+
+  Fmt.printf "ty = %a@." (Fmt.Dump.result Ast.Field_type.pp) ty
 end

@@ -29,6 +29,27 @@ let skip_white =
   in
   loop ()
 
+let is_letter_or_under = function
+  | 'A' .. 'Z' | 'a' .. 'z' | '_' -> true
+  | _ -> false
+
+let is_letter_or_digit_under = function
+  | 'A' .. 'Z' | 'a' .. 'z' | '0' .. '9' | '_' -> true
+  | _ -> false
+
+let identifier =
+  skip_white
+  *> let+ c = char_if is_letter_or_under
+     and+ rest = take_if is_letter_or_digit_under in
+     String.make 1 c ^ Slice.to_string rest
+
+let exact_keyword s =
+  let* s' = identifier in
+  if s = s' then
+    return ()
+  else
+    fail_lazy (fun () -> Printf.sprintf "expected %S" s)
+
 let int_const_ =
   let* sign =
     char '+' *> return true <|> char '-' *> return false <|> return true
@@ -120,3 +141,70 @@ let const_value : Ast.Const_value.t P.t =
          lookahead_ignore (char '{'), map_const_ self;
          lookahead_ignore (char '['), list_const_ self;
        ]
+
+let base_type =
+  exact_keyword "bool" *> return T_BOOL
+  <|> exact_keyword "byte" *> return T_BYTE
+  <|> exact_keyword "i8" *> return T_I8
+  <|> exact_keyword "i16" *> return T_I16
+  <|> exact_keyword "i32" *> return T_I32
+  <|> exact_keyword "i64" *> return T_I64
+  <|> exact_keyword "double" *> return T_DOUBLE
+  <|> exact_keyword "string" *> return T_STRING
+  <|> exact_keyword "binary" *> return T_BINARY
+  <?> "base type"
+
+let cpp_type_ = skip_white *> exact_keyword "cpp_type" *> literal_ *> return ()
+
+let container_type self =
+  (exact_keyword "list" *> skip_white *> char '<'
+  *> let+ e = self <* skip_white <* char '>' <* optional_ cpp_type_ in
+     Ast.Field_type.List e)
+  <|> (exact_keyword "set" *> optional_ cpp_type_ *> skip_white *> char '<'
+      *> let+ e = self <* skip_white <* char '>' in
+         Ast.Field_type.Set e)
+  <|> (exact_keyword "map" *> optional_ cpp_type_ *> skip_white *> char '<'
+      *> let+ k = self
+         and+ _ = skip_white *> char ','
+         and+ v = self
+         and+ _ = skip_white <* char '>' in
+         Ast.Field_type.Map (k, v))
+  <?> "expected container type"
+
+let field_type =
+  fix @@ fun self ->
+  (skip_white
+  *> let+ s = base_type in
+     Ast.Field_type.Base s)
+  <|> container_type self
+  <|> (let* s = identifier in
+       if s = "list" || s = "map" || s = "set" then
+         fail "bad container"
+       else
+         return @@ Ast.Field_type.Named s)
+  <?> "expected field type"
+
+let statement : Ast.Statement.t P.t =
+  skip_white
+  *> try_or_l ~msg:"expected statement"
+       [
+         ( exact_keyword "const" *> return (),
+           exact_keyword "const"
+           *> let+ ty = field_type
+              and+ name = identifier
+              and+ _ = skip_white *> char '='
+              and+ v = const_value
+              and+ _ = optional_ list_sep_ in
+              Ast.Statement.Const { ty; name; value = v } );
+       ]
+
+let file =
+  let rec loop acc =
+    skip_white
+    *> try_or eoi
+         ~f:(fun _ -> return @@ List.rev acc)
+         ~else_:
+           (let* st = statement in
+            loop (st :: acc))
+  in
+  loop []

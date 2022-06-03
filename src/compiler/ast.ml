@@ -19,3 +19,31 @@ module Const_value = struct
       let pp_pair out (k, v) = Fmt.fprintf out "@[%a: %a@]" pp k pp v in
       Fmt.fprintf out "{@[%a@]}" (Fmt.list pp_pair) l
 end
+
+type identifier = string
+
+module Field_type = struct
+  type t =
+    | Base of field_type
+    | Named of identifier
+    | List of t
+    | Map of t * t
+    | Set of t
+
+  let rec pp out = function
+    | Base n -> Fmt.string out (string_of_field_type n)
+    | Named s -> Fmt.string out s
+    | List l -> Fmt.fprintf out "list< @[%a@] >" pp l
+    | Set l -> Fmt.fprintf out "set< @[%a@] >" pp l
+    | Map (a, b) -> Fmt.fprintf out "map< @[%a,@ %a@] >" pp a pp b
+end
+
+module Statement = struct
+  type namespace_scope = string
+
+  type t =
+    | Include of string
+    | Cpp_include of string
+    | Namespace of namespace_scope * identifier
+    | Const of { ty: Field_type.t; name: identifier; value: Const_value.t }
+end
