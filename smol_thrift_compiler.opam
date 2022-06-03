@@ -10,7 +10,7 @@ bug-reports: "https://github.com/c-cube/smol_thrift/issues"
 depends: [
   "ocaml" {>= "4.08"}
   "smol_thrift" {= version}
-  "containers" {>= "3.0"}
+  "containers" {>= "3.6"}
   "dune"
 ]
 build: [

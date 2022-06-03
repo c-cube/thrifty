@@ -30,7 +30,7 @@
   (smol_thrift
    (= :version))
   (containers
-   (>= 3.0))
+   (>= 3.6))
   dune)
  (tags
   (topics thrift rpc serialization)))

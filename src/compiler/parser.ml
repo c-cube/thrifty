@@ -87,6 +87,19 @@ let map_const_ self =
   in
   char '{' *> pairs []
 
+let list_const_ self =
+  let rec loop acc =
+    skip_white
+    *> try_or (char ']')
+         ~f:(fun _ -> return (Ast.Const_value.List (List.rev acc)))
+         ~else_:
+           (let* x = self and* _ = optional_ list_sep_ in
+            loop (x :: acc))
+  in
+  char '[' *> loop []
+
+(* TODO: double constant *)
+
 let const_value : Ast.Const_value.t P.t =
   fix @@ fun self ->
   skip_white
@@ -104,4 +117,5 @@ let const_value : Ast.Const_value.t P.t =
            literal_ );
          lookahead_ignore bool_const_, bool_const_;
          lookahead_ignore (char '{'), map_const_ self;
+         lookahead_ignore (char '['), list_const_ self;
        ]
