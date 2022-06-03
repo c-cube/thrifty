@@ -23,7 +23,6 @@ jobs:
     - run: opam pin -n .
     - run: opam depext -yt smol_thrift smol_thrift_compiler
     - run: opam install -t . --deps-only
-    - run: opam install sqlite3
-    - run: opam exec -- dune build -p smol_thrift,smol_thrift_compiler
-    - run: opam exec -- dune runtest -p smol_thrift,smol_thrift_compiler
-    - run: opam exec -- dune build -p smol_thrift,smol_thrift_compiler
+    - run: opam exec -- dune build --display=short -p smol_thrift,smol_thrift_compiler
+    - run: opam exec -- dune runtest --display=short -p smol_thrift,smol_thrift_compiler
+    - run: opam exec -- dune build --display=short -p smol_thrift,smol_thrift_compiler
