@@ -7,6 +7,10 @@ let parse_string = P.parse_string
 open P.Infix
 open P
 
+let show_opt_ pp = function
+  | None -> "None"
+  | Some x -> Format.asprintf "Some @[%a@]" pp x
+
 let read_multiline_comment =
   chars_fold `normal ~f:(fun acc c ->
       match acc, c with
@@ -76,7 +80,6 @@ let literal_ =
                | _ -> `Continue ())
          <* char '\'' >|= snd >|= Slice.to_string)
      <?> "expected literal")
-  >|= fun s -> Ast.Const_value.String s
 
 let bool_const_ =
   let+ b =
@@ -136,7 +139,8 @@ let const_value : Ast.Const_value.t P.t =
              (char_if (function
                | '"' | '\'' -> true
                | _ -> false)),
-           literal_ );
+           let+ s = literal_ in
+           Ast.Const_value.String s );
          lookahead_ignore bool_const_, bool_const_;
          lookahead_ignore (char '{'), map_const_ self;
          lookahead_ignore (char '['), list_const_ self;
@@ -184,27 +188,58 @@ let field_type =
          return @@ Ast.Field_type.Named s)
   <?> "expected field type"
 
-let statement : Ast.Statement.t P.t =
+let header : Ast.Header.t option P.t =
   skip_white
-  *> try_or_l ~msg:"expected statement"
+  *> try_or_l ~msg:"expected header"
        [
-         ( exact_keyword "const" *> return (),
-           exact_keyword "const"
-           *> let+ ty = field_type
-              and+ name = identifier
-              and+ _ = skip_white *> char '='
-              and+ v = const_value
-              and+ _ = optional_ list_sep_ in
-              Ast.Statement.Const { ty; name; value = v } );
+         ( exact_keyword "include" *> return (),
+           exact_keyword "include"
+           *> let+ s = literal_ in
+              Some (Ast.Header.Include s) );
+         ( exact_keyword "cpp_include" *> return (),
+           exact_keyword "cpp_include"
+           *> let+ s = literal_ in
+              Some (Ast.Header.Cpp_include s) )
+         (* TODO: namespace *);
+         eoi, return None;
        ]
+       ~else_:(return None)
+
+let def : Ast.Definition.t option P.t =
+  Debug_.trace_success_or_fail "def" ~print:(show_opt_ Ast.Definition.pp)
+  @@ skip_white
+     *> try_or_l ~msg:"expected definition"
+          [
+            ( exact_keyword "const" *> return (),
+              exact_keyword "const"
+              *> let+ ty = field_type
+                 and+ name = identifier
+                 and+ _ = skip_white *> char '='
+                 and+ v = const_value
+                 and+ _ = optional_ list_sep_ in
+                 Some (Ast.Definition.Const { ty; name; value = v }) );
+          ]
+          ~else_:(return None)
 
 let file =
-  let rec loop acc =
+  let rec body headers acc =
     skip_white
     *> try_or eoi
-         ~f:(fun _ -> return @@ List.rev acc)
+         ~f:(fun _ -> return @@ Ast.File.make headers (List.rev acc))
          ~else_:
-           (let* st = statement in
-            loop (st :: acc))
+           (let* d = def in
+            match d with
+            | Some d -> body headers (d :: acc)
+            | None -> return @@ Ast.File.make headers (List.rev acc))
   in
-  loop []
+  let rec headers acc =
+    skip_white
+    *> try_or eoi
+         ~f:(fun _ -> return @@ Ast.File.make (List.rev acc) [])
+         ~else_:
+           (let* h = header in
+            match h with
+            | Some h -> headers (h :: acc)
+            | None -> body (List.rev acc) [])
+  in
+  headers []

@@ -1,5 +1,7 @@
 module Fmt = CCFormat
 
+let fpf = Fmt.fprintf
+
 module Const_value = struct
   type t =
     | Bool of bool
@@ -11,13 +13,13 @@ module Const_value = struct
 
   let rec pp out = function
     | Bool b -> Fmt.pp_print_bool out b
-    | Int i -> Fmt.fprintf out "%Ld" i
-    | Double f -> Fmt.fprintf out "%f" f
-    | String s -> Fmt.fprintf out "%S" s
+    | Int i -> fpf out "%Ld" i
+    | Double f -> fpf out "%f" f
+    | String s -> fpf out "%S" s
     | List l -> Fmt.Dump.list pp out l
     | Map l ->
-      let pp_pair out (k, v) = Fmt.fprintf out "@[%a: %a@]" pp k pp v in
-      Fmt.fprintf out "{@[%a@]}" (Fmt.list pp_pair) l
+      let pp_pair out (k, v) = fpf out "@[%a: %a@]" pp k pp v in
+      fpf out "{@[%a@]}" (Fmt.list pp_pair) l
 end
 
 type identifier = string
@@ -33,17 +35,44 @@ module Field_type = struct
   let rec pp out = function
     | Base n -> Fmt.string out (string_of_field_type n)
     | Named s -> Fmt.string out s
-    | List l -> Fmt.fprintf out "list< @[%a@] >" pp l
-    | Set l -> Fmt.fprintf out "set< @[%a@] >" pp l
-    | Map (a, b) -> Fmt.fprintf out "map< @[%a,@ %a@] >" pp a pp b
+    | List l -> fpf out "list< @[%a@] >" pp l
+    | Set l -> fpf out "set< @[%a@] >" pp l
+    | Map (a, b) -> fpf out "map< @[%a,@ %a@] >" pp a pp b
 end
 
-module Statement = struct
+module Header = struct
   type namespace_scope = string
 
   type t =
     | Include of string
     | Cpp_include of string
     | Namespace of namespace_scope * identifier
+
+  let pp out = function
+    | Include s -> fpf out "include %S" s
+    | Cpp_include s -> fpf out "cpp_include %S" s
+    | Namespace (sc, i) -> fpf out "namespace (%S, %S)" sc i
+end
+
+module Definition = struct
+  type t =
     | Const of { ty: Field_type.t; name: identifier; value: Const_value.t }
+
+  let pp out = function
+    | Const { ty; name; value } ->
+      fpf out "const %s : %a := %a" name Field_type.pp ty Const_value.pp value
+
+  let show = Format.asprintf "%a" pp
+end
+
+module File = struct
+  type t = { headers: Header.t list; defs: Definition.t list }
+
+  let make headers defs : t = { headers; defs }
+
+  let pp out self =
+    fpf out "{@[ headers: %a;@ defs: %a@ @]}" (Fmt.Dump.list Header.pp)
+      self.headers
+      (Fmt.Dump.list Definition.pp)
+      self.defs
 end

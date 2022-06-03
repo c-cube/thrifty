@@ -64,3 +64,18 @@ module P_field_ty1 = struct
 
   Fmt.printf "ty = %a@." (Fmt.Dump.result Ast.Field_type.pp) ty
 end
+
+module P_file1 = struct
+  let s = {|
+  //include "foo";
+
+  //include "bar";
+  const i32 x = 42,
+  const bool y = false;
+    const string my_lovely_str = "hello world !";
+] |}
+
+  let f = Parser.parse_string Parser.file s;;
+
+  Fmt.printf "ty = %a@." (Fmt.Dump.result Ast.File.pp) f
+end
