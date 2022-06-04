@@ -1,0 +1,7 @@
+encoded data (37 bytes): "\128\001\000\004\000\000\000\005hello\000\000\000*\b\000\001\000\000\000\017\011\000\002\000\000\000\005hello\000"
+read string 5
+msg name=hello seq=42
+got field x
+read string 5
+got field y
+got end of message
