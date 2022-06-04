@@ -2,28 +2,28 @@
  (alias runtest)
  (package smol_thrift_compiler)
  (action
-  (run ./bin/parse_print.exe ./ThriftTest.thrift)))
+  (run ./../bin/parse_print.exe ./Errors.thrift)))
 
 (rule
  (alias runtest)
  (package smol_thrift_compiler)
  (action
-  (run ./bin/parse_print.exe ./fb303.thrift)))
+  (run ./../bin/parse_print.exe ./Limits.thrift)))
 
 (rule
  (alias runtest)
  (package smol_thrift_compiler)
  (action
-  (run ./bin/parse_print.exe ./shared.thrift)))
+  (run ./../bin/parse_print.exe NoteStore.thrift)))
 
 (rule
  (alias runtest)
  (package smol_thrift_compiler)
  (action
-  (run ./bin/parse_print.exe tutorial.thrift)))
+  (run ./../bin/parse_print.exe Types.thrift)))
 
 (rule
  (alias runtest)
  (package smol_thrift_compiler)
  (action
-  (run ./bin/parse_print.exe ./cassandra.thrift)))
+  (run ./../bin/parse_print.exe UserStore.thrift)))
