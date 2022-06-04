@@ -16,6 +16,7 @@ class transport_buffer =
 
     method close = ()
     method is_closed = false
+    method write_byte c = Buffer.add_char buf c
     method write s i len = Buffer.add_subbytes buf s i len
     method flush = ()
   end
@@ -28,9 +29,15 @@ let transport_of_string (s : string) : transport_read =
     method is_closed = !off >= String.length s
     method close = ()
 
+    method read_byte =
+      let c = s.[!off] in
+      incr off;
+      c
+
     method read buf i len =
       let len = min len (String.length s - !off) in
       Bytes.blit_string s !off buf i len;
+      off := !off + len;
       len
   end
 
@@ -49,7 +56,14 @@ let transport_write_file (file : string) : transport_write =
 
     method is_closed = closed
     method flush = flush oc
-    method write buf i len = output oc buf i len
+
+    method write_byte c =
+      assert (not closed);
+      output_char oc c
+
+    method write buf i len =
+      assert (not closed);
+      output oc buf i len
   end
 
 (** Transport that reads from a file *)
@@ -66,6 +80,7 @@ let transport_read_file (file : string) : transport_read =
       )
 
     method is_closed = closed
+    method read_byte = input_char ic
 
     method read buf i len =
       let n = input ic buf i len in

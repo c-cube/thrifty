@@ -1,3 +1,4 @@
 (library
  (public_name smol_thrift)
+ ;(libraries stdint)
  (name smol_thrift))

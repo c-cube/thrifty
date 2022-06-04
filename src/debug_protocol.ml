@@ -11,11 +11,11 @@ module Token = struct
     | T_field_begin of string * field_type * field_id
     | T_field_end
     | T_field_stop
-    | T_map_begin of field_data * field_data * size
+    | T_map_begin of element_type * element_type * size
     | T_map_end
-    | T_list_begin of field_data * size
+    | T_list_begin of element_type * size
     | T_list_end
-    | T_set_begin of field_data * size
+    | T_set_begin of element_type * size
     | T_set_end
     | T_bool of bool
     | T_byte of char
@@ -38,11 +38,15 @@ module Token = struct
       spf "field_begin(%S,%s,%d)" s (string_of_field_type ty) i
     | T_field_end -> "field_end"
     | T_field_stop -> "field_stop"
-    | T_map_begin (_, _, sz) -> spf "map_begin(%d)" sz
+    | T_map_begin (k, v, sz) ->
+      spf "map_begin(%d,<%s,%s>)" sz (string_of_element_type k)
+        (string_of_element_type v)
     | T_map_end -> "map_end"
-    | T_list_begin (_, sz) -> spf "list_begin(%d)" sz
+    | T_list_begin (ty, sz) ->
+      spf "list_begin(%d,%s)" sz (string_of_element_type ty)
     | T_list_end -> "list_end"
-    | T_set_begin (_, sz) -> spf "set_begin(%d)" sz
+    | T_set_begin (ty, sz) ->
+      spf "set_begin(%d,%s)" sz (string_of_element_type ty)
     | T_set_end -> "set_end"
     | T_bool b -> spf "%B" b
     | T_byte c -> spf "%C" c

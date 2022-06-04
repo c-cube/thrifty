@@ -15,6 +15,8 @@ type field_type =
   | T_SET
   | T_LIST
 
+type element_type = field_type
+
 let string_of_field_type = function
   | T_BOOL -> "BOOL"
   | T_BYTE -> "BYTE"
@@ -30,17 +32,7 @@ let string_of_field_type = function
   | T_SET -> "SET"
   | T_LIST -> "LIST"
 
-(** Type of data found inside a field (or a list/set/map) *)
-type field_data = I8 | I16 | I32 | I64 | DOUBLE | STRING | BINARY
-
-let string_of_field_data = function
-  | I8 -> "I8"
-  | I16 -> "I16"
-  | I32 -> "I32"
-  | I64 -> "I64"
-  | DOUBLE -> "DOUBLE"
-  | STRING -> "STRING"
-  | BINARY -> "BINARY"
+let string_of_element_type = string_of_field_type
 
 (** Type of a message.
 
@@ -77,11 +69,11 @@ class virtual protocol_write =
     method virtual write_field_stop : unit
     (** Indicate that the struct is done, no more fields will be added to it *)
 
-    method virtual write_map_begin : field_data -> field_data -> size -> unit
+    method virtual write_map_begin : field_type -> field_type -> size -> unit
     method virtual write_map_end : unit
-    method virtual write_list_begin : field_data -> size -> unit
+    method virtual write_list_begin : field_type -> size -> unit
     method virtual write_list_end : unit
-    method virtual write_set_begin : field_data -> size -> unit
+    method virtual write_set_begin : field_type -> size -> unit
     method virtual write_set_end : unit
     method virtual write_bool : bool -> unit
     method virtual write_byte : char -> unit
@@ -109,11 +101,11 @@ class virtual protocol_read =
         that struct/exception/message *)
 
     method virtual read_field_end : unit
-    method virtual read_map_begin : field_data * field_data * size
+    method virtual read_map_begin : element_type * element_type * size
     method virtual read_map_end : unit
-    method virtual read_list_begin : field_data * size
+    method virtual read_list_begin : element_type * size
     method virtual read_list_end : unit
-    method virtual read_set_begin : field_data * size
+    method virtual read_set_begin : element_type * size
     method virtual read_set_end : unit
     method virtual read_bool : bool
     method virtual read_byte : char
@@ -127,10 +119,23 @@ class virtual protocol_read =
 
 (** Transport to read values *)
 class virtual transport_read =
-  object
+  object (self)
     method virtual is_closed : bool
     method virtual close : unit
+    method virtual read_byte : char
     method virtual read : bytes -> int -> int -> int
+
+    method really_read b i n : unit =
+      let i = ref i in
+      let n = ref n in
+      while !n > 0 do
+        let len = self#read b !i !n in
+        if len = 0 then raise End_of_file;
+        i := !i + len;
+        n := !n - len
+      done
+    (** Really read [n] bytes into [b] at offset [i].
+     @raise End_of_file if the input is exhausted first. *)
   end
 
 (** Transport to emit values *)
@@ -138,6 +143,7 @@ class virtual transport_write =
   object
     method virtual is_closed : bool
     method virtual close : unit
+    method virtual write_byte : char -> unit
     method virtual write : bytes -> int -> int -> unit
     method virtual flush : unit
   end

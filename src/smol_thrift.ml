@@ -2,7 +2,8 @@
 
 module Types = Types
 module Basic_transports = Basic_transports
-module Debug_protocols = Debug_protocols
+module Debug_protocol = Debug_protocol
+module Binary_protocol = Binary_protocol
 
 (* TODO: a forwarder from protocol_read to protocol_write *)
 
