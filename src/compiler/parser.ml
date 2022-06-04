@@ -4,7 +4,6 @@ type 'a t = 'a P.t
 
 let parse_string = P.parse_string
 
-open P.Infix
 open P
 
 let _show_opt_ pp = function
@@ -64,9 +63,7 @@ let exact_keyword s =
     fail_lazy (fun () -> Printf.sprintf "expected %S" s)
 
 let int_const_ =
-  let* sign =
-    char '+' *> return true <|> char '-' *> return false <|> return true
-  in
+  let* sign = char '+' *> return 1 <|> char '-' *> return (-1) <|> return 1 in
   let+ (_, c), _ =
     chars_fold (false, 0) ~f:(fun (parsed_any, acc) c ->
         match c with
@@ -75,11 +72,26 @@ let int_const_ =
         | _ when not parsed_any -> `Fail "expected an int"
         | _ -> `Stop (true, acc))
   in
-  (if sign then
-    1
-  else
-    -1)
-  * c
+  sign * c
+
+let double_const_ =
+  let* sign =
+    char '+' *> return 1. <|> char '-' *> return (-1.) <|> return 1.
+  in
+  let* st, s =
+    chars_fold `mantissa ~f:(fun state c ->
+        match state, c with
+        | `mantissa, ('.' | '0' .. '9') -> `Continue `mantissa
+        | `exp, ('+' | '-' | '0' .. '9') -> `Continue `exp
+        | `mantissa, ('e' | 'E') -> `Continue `exp
+        | _ -> `Stop state)
+  in
+  let s = Slice.to_string s in
+  if String.contains s '.' || st = `exp then (
+    try return @@ (sign *. float_of_string s)
+    with _ -> fail "expected double const"
+  ) else
+    fail "expected double const"
 
 let literal_ =
   skip_white
@@ -153,8 +165,6 @@ let metadata =
          <* skip_white <* char ')')
        ~else_:(return [])
 
-(* TODO: double constant *)
-
 let const_value : Ast.Const_value.t P.t =
   fix @@ fun self ->
   skip_white
@@ -164,8 +174,10 @@ let const_value : Ast.Const_value.t P.t =
              (char_if (function
                | '-' | '+' | '0' .. '9' -> true
                | _ -> false)),
-           let+ n = int_const_ in
-           Ast.Const_value.Int (Int64.of_int n) );
+           (let+ d = double_const_ in
+            Ast.Const_value.Double d)
+           <|> let+ n = int_const_ in
+               Ast.Const_value.Int (Int64.of_int n) );
          ( lookahead_ignore
              (char_if (function
                | '"' | '\'' -> true
