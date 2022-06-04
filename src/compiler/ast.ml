@@ -40,6 +40,26 @@ module Field_type = struct
     | Map (a, b) -> fpf out "map< @[%a,@ %a@] >" pp a pp b
 end
 
+(* TODO
+   module Def_type = struct
+     type field = { name: string; ty: Field_type.t; default: Const_value.t option }
+     type t = Struct of field list | Union of field list
+
+     let pp_field out (f : field) =
+       let pp_default out = function
+         | None -> ()
+         | Some d -> fpf out " := %a" Const_value.pp d
+       in
+       fpf out "@[%s: %a%a;@]" f.name Field_type.pp f.ty pp_default f.default
+
+     let pp out = function
+       | Struct fields ->
+         fpf out "{@[%a@]}" (Fmt.list ~sep:(return ()) pp_field) fields
+       | Union fields ->
+         fpf out "union {@[%a@]}" (Fmt.list ~sep:(const ()) pp_field) fields
+   end
+*)
+
 module Header = struct
   type namespace_scope = string
 
@@ -57,10 +77,14 @@ end
 module Definition = struct
   type t =
     | Const of { ty: Field_type.t; name: identifier; value: Const_value.t }
+    | TypeDef of { ty: Field_type.t; name: identifier }
 
   let pp out = function
     | Const { ty; name; value } ->
-      fpf out "const %s : %a := %a" name Field_type.pp ty Const_value.pp value
+      fpf out "@[const %s : %a :=@ %a@];" name Field_type.pp ty Const_value.pp
+        value
+    | TypeDef { ty; name } ->
+      fpf out "@[typedef %s :=@ %a@];" name Field_type.pp ty
 
   let show = Format.asprintf "%a" pp
 end

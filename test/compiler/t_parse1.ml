@@ -66,14 +66,17 @@ module P_field_ty1 = struct
 end
 
 module P_file1 = struct
-  let s = {|
+  let s =
+    {|
   //include "foo";
 
   //include "bar";
   const i32 x = 42,
   const bool y = false;
     const string my_lovely_str = "hello world !";
-] |}
+
+  typedef truthvals = set<bool>;
+ |}
 
   let f = Parser.parse_string Parser.file s;;
 

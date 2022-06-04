@@ -218,8 +218,15 @@ let def : Ast.Definition.t option P.t =
                  and+ v = const_value
                  and+ _ = optional_ list_sep_ in
                  Some (Ast.Definition.Const { ty; name; value = v }) );
+            ( exact_keyword "typedef" *> return (),
+              exact_keyword "typedef"
+              *> let+ name = identifier
+                 and+ _ = skip_white *> char '='
+                 and+ ty = field_type
+                 and+ _ = optional_ list_sep_ in
+                 Some (Ast.Definition.TypeDef { ty; name }) );
+            eoi, return None;
           ]
-          ~else_:(return None)
 
 let file =
   let rec body headers acc =
