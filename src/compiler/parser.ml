@@ -7,7 +7,7 @@ let parse_string = P.parse_string
 open P.Infix
 open P
 
-let show_opt_ pp = function
+let _show_opt_ pp = function
   | None -> "None"
   | Some x -> Format.asprintf "Some `@[%a@]`" pp x
 
@@ -26,6 +26,8 @@ let skip_white =
     *> try_or_l ~else_:(return ())
          [
            ( lookahead (string "//" *> return ()),
+             suspend (fun () -> line *> loop ()) );
+           ( lookahead (string "#" *> return ()),
              suspend (fun () -> line *> loop ()) );
            ( lookahead (string "/*" *> return ()),
              suspend (fun () -> read_multiline_comment *> loop ()) );
@@ -320,69 +322,76 @@ let service_functions =
   list_until_ ~until:(char '}') fun_
 
 let def : Ast.Definition.t option P.t =
-  Debug_.trace_success_or_fail "def" ~print:(show_opt_ Ast.Definition.pp)
-  @@ skip_white
-     *> try_or_l ~msg:"expected definition"
-          [
-            ( exact_keyword "const" *> return (),
-              exact_keyword "const"
-              *> let+ ty = field_type
-                 and+ name = identifier
-                 and+ _ = equal
-                 and+ v = const_value
-                 and+ meta = metadata
-                 and+ _ = optional_ list_sep_ in
-                 Some
-                   Ast.Definition.{ meta; view = Const { ty; name; value = v } }
-            );
-            ( exact_keyword "typedef" *> return (),
-              exact_keyword "typedef"
-              *> let+ ty = field_type
-                 and+ name = identifier
-                 and+ meta = metadata
-                 and+ _ = optional_ list_sep_ in
-                 Some Ast.Definition.{ meta; view = TypeDef { ty; name } } );
-            ( exact_keyword "struct" *> return (),
-              exact_keyword "struct"
-              *> let+ name = identifier
-                 and+ _ = optional_ (skip_white *> exact_keyword "xsd_all")
-                 and+ fields = in_braces field_list
-                 and+ meta = metadata
-                 and+ _ = optional_ list_sep_ in
-                 Some Ast.Definition.{ meta; view = Struct { name; fields } } );
-            ( exact_keyword "union" *> return (),
-              exact_keyword "union"
-              *> let+ name = identifier
-                 and+ _ = optional_ (skip_white *> exact_keyword "xsd_all")
-                 and+ fields = in_braces field_list
-                 and+ meta = metadata
-                 and+ _ = optional_ list_sep_ in
-                 Some Ast.Definition.{ meta; view = Union { name; fields } } );
-            ( exact_keyword "exception" *> return (),
-              exact_keyword "exception"
-              *> let+ name = identifier
-                 and+ _ = optional_ (skip_white *> exact_keyword "xsd_all")
-                 and+ fields = in_braces field_list
-                 and+ meta = metadata
-                 and+ _ = optional_ list_sep_ in
-                 Some Ast.Definition.{ meta; view = Exception { name; fields } }
-            );
-            ( exact_keyword "enum" *> return (),
-              exact_keyword "enum"
-              *> let+ name = identifier
-                 and+ cases = in_braces enum_cases
-                 and+ meta = metadata
-                 and+ _ = optional_ list_sep_ in
-                 Some Ast.Definition.{ meta; view = Enum { name; cases } } );
-            ( exact_keyword "service" *> return (),
-              exact_keyword "service"
-              *> let+ name = identifier
-                 and+ funs = in_braces service_functions
-                 and+ meta = metadata
-                 and+ _ = optional_ list_sep_ in
-                 Some Ast.Definition.{ meta; view = Service { name; funs } } );
-            eoi, return None;
-          ]
+  (*Debug_.trace_success_or_fail "def" ~print:(_show_opt_ Ast.Definition.pp)
+    @@*)
+  skip_white
+  *> try_or_l ~msg:"expected definition"
+       [
+         ( exact_keyword "const" *> return (),
+           exact_keyword "const"
+           *> let+ ty = field_type
+              and+ name = identifier
+              and+ _ = equal
+              and+ v = const_value
+              and+ meta = metadata
+              and+ _ = optional_ list_sep_ in
+              Some Ast.Definition.{ meta; view = Const { ty; name; value = v } }
+         );
+         ( exact_keyword "typedef" *> return (),
+           exact_keyword "typedef"
+           *> let+ ty = field_type
+              and+ name = identifier
+              and+ meta = metadata
+              and+ _ = optional_ list_sep_ in
+              Some Ast.Definition.{ meta; view = TypeDef { ty; name } } );
+         ( exact_keyword "struct" *> return (),
+           exact_keyword "struct"
+           *> let+ name = identifier
+              and+ _ = optional_ (skip_white *> exact_keyword "xsd_all")
+              and+ fields = in_braces field_list
+              and+ meta = metadata
+              and+ _ = optional_ list_sep_ in
+              Some Ast.Definition.{ meta; view = Struct { name; fields } } );
+         ( exact_keyword "union" *> return (),
+           exact_keyword "union"
+           *> let+ name = identifier
+              and+ _ = optional_ (skip_white *> exact_keyword "xsd_all")
+              and+ fields = in_braces field_list
+              and+ meta = metadata
+              and+ _ = optional_ list_sep_ in
+              Some Ast.Definition.{ meta; view = Union { name; fields } } );
+         ( exact_keyword "exception" *> return (),
+           exact_keyword "exception"
+           *> let+ name = identifier
+              and+ _ = optional_ (skip_white *> exact_keyword "xsd_all")
+              and+ fields = in_braces field_list
+              and+ meta = metadata
+              and+ _ = optional_ list_sep_ in
+              Some Ast.Definition.{ meta; view = Exception { name; fields } } );
+         ( exact_keyword "enum" *> return (),
+           exact_keyword "enum"
+           *> let+ name = identifier
+              and+ cases = in_braces enum_cases
+              and+ meta = metadata
+              and+ _ = optional_ list_sep_ in
+              Some Ast.Definition.{ meta; view = Enum { name; cases } } );
+         ( exact_keyword "service" *> return (),
+           exact_keyword "service"
+           *> let+ name = identifier
+              and+ extends =
+                skip_white
+                *> ((exact_keyword "extends"
+                    *> let+ s = identifier in
+                       Some s)
+                   <|> return None)
+              and+ funs = in_braces service_functions
+              and+ meta = metadata
+              and+ _ = optional_ list_sep_ in
+              Some
+                Ast.Definition.{ meta; view = Service { name; extends; funs } }
+         );
+         eoi, return None;
+       ]
 
 let file =
   let rec body headers acc =

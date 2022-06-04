@@ -143,7 +143,11 @@ module Definition = struct
     | Struct of { name: identifier; fields: Field.t list }
     | Union of { name: identifier; fields: Field.t list }
     | Exception of { name: identifier; fields: Field.t list }
-    | Service of { name: identifier; funs: Function.t list }
+    | Service of {
+        name: identifier;
+        extends: identifier option;
+        funs: Function.t list;
+      }
 
   type t = { meta: Metadata.t; view: view }
 
@@ -173,8 +177,12 @@ module Definition = struct
       fpf out "@[<hv2>union %s %a@]" name pp_fields fields
     | Exception { name; fields } ->
       fpf out "@[<hv2>exception %s %a@]" name pp_fields fields
-    | Service { name; funs } ->
-      fpf out "@[<hv2>service %s {@;<1 0>%a@;<1 -2>}@]" name
+    | Service { name; extends; funs } ->
+      let pp_extend out = function
+        | None -> ()
+        | Some e -> fpf out "@ extends %s" e
+      in
+      fpf out "@[<hv2>service %s%a {@;<1 0>%a@;<1 -2>}@]" name pp_extend extends
         (pp_list_sp Function.pp) funs);
 
     Metadata.pp out self.meta;
