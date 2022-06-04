@@ -20,7 +20,7 @@
  (alias runtest)
  (package smol_thrift_compiler)
  (action
-  (run ./bin/parse_print.exe tutorial.thrift)))
+  (run ./bin/parse_print.exe ./tutorial.thrift)))
 
 (rule
  (alias runtest)
