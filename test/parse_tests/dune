@@ -1,0 +1,23 @@
+(rule
+ (alias runtest)
+ (package smol_thrift_compiler)
+ (action
+  (run ./bin/parse_print.exe ./ThriftTest.thrift)))
+
+(rule
+ (alias runtest)
+ (package smol_thrift_compiler)
+ (action
+  (run ./bin/parse_print.exe ./fb303.thrift)))
+
+(rule
+ (alias runtest)
+ (package smol_thrift_compiler)
+ (action
+  (run ./bin/parse_print.exe ./shared.thrift)))
+
+(rule
+ (alias runtest)
+ (package smol_thrift_compiler)
+ (action
+  (run ./bin/parse_print.exe tutorial.thrift)))

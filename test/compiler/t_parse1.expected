@@ -21,5 +21,6 @@ ty = (Ok { headers: [];
                    BOOL isLaunched ()
                    oneway void ping () throws ((2:) all_done:  set< BOOL >;)
                  };
+                 service Bar extends Foo {  };
                  struct Yolo { (1:) swag:  set< I32 (x = 'x') >; } (ocaml = 'yep yep');]
           })

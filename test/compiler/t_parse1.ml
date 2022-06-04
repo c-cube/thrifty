@@ -99,6 +99,9 @@ module P_file1 = struct
 
   }
 
+  service Bar extends Foo {
+  }
+
   struct Yolo {
     1: set < i32 (x='x') > swag (swag = 'super');
   } (ocaml = 'yep yep');

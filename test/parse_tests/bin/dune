@@ -1,0 +1,3 @@
+(executable
+ (name parse_print)
+ (libraries containers smol_thrift smol_thrift_compiler.lib))
