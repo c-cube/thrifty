@@ -27,20 +27,35 @@ end
 
 type identifier = string
 
+module Metadata = struct
+  type key = identifier
+  type value = string (* literal *)
+
+  type t = (key * value) list
+
+  let pp out (self : t) =
+    let pp_kv out (k, v) = fpf out " (@[%s = '%s'@])" k v in
+    List.iter (pp_kv out) self
+end
+
 module Field_type = struct
-  type t =
+  type t = { view: view; meta: Metadata.t }
+
+  and view =
     | Base of field_type
     | Named of identifier
     | List of t
     | Map of t * t
     | Set of t
 
-  let rec pp out = function
+  let rec pp out self =
+    (match self.view with
     | Base n -> Fmt.string out (string_of_field_type n)
     | Named s -> Fmt.string out s
     | List l -> fpf out "list< @[%a@] >" pp l
     | Set l -> fpf out "set< @[%a@] >" pp l
-    | Map (a, b) -> fpf out "map< @[%a,@ %a@] >" pp a pp b
+    | Map (a, b) -> fpf out "map< @[%a,@ %a@] >" pp a pp b);
+    Metadata.pp out self.meta
 end
 
 module Field = struct
@@ -72,11 +87,36 @@ module Field = struct
       Field_type.pp f.ty pp_default f.default
 end
 
-module Struct_fields = struct
-  type t = { fields: Field.t list }
+module Function_type = struct
+  type t = Void | Ty of Field_type.t
 
-  let pp out { fields } =
-    fpf out "{@;<1 0>%a@;<1 -2>}" (pp_list_sp Field.pp) fields
+  let pp out = function
+    | Void -> fpf out "void"
+    | Ty ty -> Field_type.pp out ty
+end
+
+module Function = struct
+  type t = {
+    oneway: bool;
+    ty: Function_type.t;
+    name: identifier;
+    args: Field.t list;
+    throws: Field.t list option;
+  }
+
+  let pp out (self : t) =
+    let oneway =
+      if self.oneway then
+        "oneway "
+      else
+        ""
+    in
+    let pp_throw out = function
+      | None -> ()
+      | Some f -> fpf out "@ throws (@[%a@])" (pp_list_sp Field.pp) f
+    in
+    fpf out "@[<2>%s%a %s (@[%a@])%a@]" oneway Function_type.pp self.ty
+      self.name (pp_list_sp Field.pp) self.args pp_throw self.throws
 end
 
 module Header = struct
@@ -96,11 +136,16 @@ end
 module Definition = struct
   type enum_case = { e_name: identifier; e_num: int option }
 
-  type t =
+  type view =
     | Const of { ty: Field_type.t; name: identifier; value: Const_value.t }
     | TypeDef of { ty: Field_type.t; name: identifier }
     | Enum of { name: identifier; cases: enum_case list }
-    | Struct of { name: identifier; fields: Struct_fields.t }
+    | Struct of { name: identifier; fields: Field.t list }
+    | Union of { name: identifier; fields: Field.t list }
+    | Exception of { name: identifier; fields: Field.t list }
+    | Service of { name: identifier; funs: Function.t list }
+
+  type t = { meta: Metadata.t; view: view }
 
   let pp_enum_case out (e : enum_case) =
     let pp_n out = function
@@ -109,17 +154,31 @@ module Definition = struct
     in
     fpf out "%s%a;" e.e_name pp_n e.e_num
 
-  let pp out = function
+  let pp out (self : t) =
+    let pp_fields out l =
+      fpf out "{@;<1 0>%a@;<1 -2>}" (pp_list_sp Field.pp) l
+    in
+    (match self.view with
     | Const { ty; name; value } ->
-      fpf out "@[const %s : %a :=@ %a@];" name Field_type.pp ty Const_value.pp
+      fpf out "@[const %s : %a :=@ %a@]" name Field_type.pp ty Const_value.pp
         value
     | TypeDef { ty; name } ->
-      fpf out "@[typedef %s :=@ %a@];" name Field_type.pp ty
+      fpf out "@[typedef %s :=@ %a@]" name Field_type.pp ty
     | Enum { name; cases } ->
-      fpf out "@[<hv2>enum %s {@;<1 0>%a@;<1 -2>}@];" name
+      fpf out "@[<hv2>enum %s {@;<1 0>%a@;<1 -2>}@]" name
         (pp_list_sp pp_enum_case) cases
     | Struct { name; fields } ->
-      fpf out "@[<hv2>struct %s %a@];" name Struct_fields.pp fields
+      fpf out "@[<hv2>struct %s %a@]" name pp_fields fields
+    | Union { name; fields } ->
+      fpf out "@[<hv2>union %s %a@]" name pp_fields fields
+    | Exception { name; fields } ->
+      fpf out "@[<hv2>exception %s %a@]" name pp_fields fields
+    | Service { name; funs } ->
+      fpf out "@[<hv2>service %s {@;<1 0>%a@;<1 -2>}@]" name
+        (pp_list_sp Function.pp) funs);
+
+    Metadata.pp out self.meta;
+    fpf out ";"
 
   let show = Format.asprintf "%a" pp
 end

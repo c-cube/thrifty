@@ -9,7 +9,7 @@ open P
 
 let show_opt_ pp = function
   | None -> "None"
-  | Some x -> Format.asprintf "Some @[%a@]" pp x
+  | Some x -> Format.asprintf "Some `@[%a@]`" pp x
 
 let read_multiline_comment =
   chars_fold `normal ~f:(fun acc c ->
@@ -65,12 +65,13 @@ let int_const_ =
   let* sign =
     char '+' *> return true <|> char '-' *> return false <|> return true
   in
-  let+ c, _ =
-    chars_fold 0 ~f:(fun acc c ->
+  let+ (_, c), _ =
+    chars_fold (false, 0) ~f:(fun (parsed_any, acc) c ->
         match c with
-        | '0' .. '9' -> `Continue ((10 * acc) + Char.code c - Char.code '0')
-        | _ when acc = 0 -> `Fail "expected an int"
-        | _ -> `Stop acc)
+        | '0' .. '9' ->
+          `Continue (true, (10 * acc) + Char.code c - Char.code '0')
+        | _ when not parsed_any -> `Fail "expected an int"
+        | _ -> `Stop (true, acc))
   in
   (if sign then
     1
@@ -134,6 +135,22 @@ let list_const_ self =
   in
   char '[' *> loop []
 
+let equal = skip_white *> char '='
+let in_braces p = skip_white *> char '{' *> p <* skip_white <* char '}'
+let in_parens p = skip_white *> char '(' *> p <* skip_white <* char ')'
+
+(* parse (k1='v1', k2='v2') *)
+let metadata =
+  skip_white
+  *> try_or (char '(')
+       ~f:(fun _ ->
+         sep1
+           ~by:(skip_white *> char ',')
+           (let+ a = identifier and+ _ = equal and+ b = literal_ in
+            a, b)
+         <* skip_white <* char ')')
+       ~else_:(return [])
+
 (* TODO: double constant *)
 
 let const_value : Ast.Const_value.t P.t =
@@ -176,47 +193,35 @@ let base_type =
 let cpp_type_ = skip_white *> exact_keyword "cpp_type" *> literal_ *> return ()
 
 let container_type self =
-  (exact_keyword "list" *> skip_white *> char '<'
-  *> let+ e = self <* skip_white <* char '>' <* optional_ cpp_type_ in
-     Ast.Field_type.List e)
-  <|> (exact_keyword "set" *> optional_ cpp_type_ *> skip_white *> char '<'
-      *> let+ e = self <* skip_white <* char '>' in
-         Ast.Field_type.Set e)
-  <|> (exact_keyword "map" *> optional_ cpp_type_ *> skip_white *> char '<'
-      *> let+ k = self
-         and+ _ = skip_white *> char ','
-         and+ v = self
-         and+ _ = skip_white <* char '>' in
-         Ast.Field_type.Map (k, v))
-  <?> "expected container type"
+  let+ view =
+    (exact_keyword "list" *> skip_white *> char '<'
+    *> let+ e = self <* skip_white <* char '>' <* optional_ cpp_type_ in
+       Ast.Field_type.List e)
+    <|> (exact_keyword "set" *> optional_ cpp_type_ *> skip_white *> char '<'
+        *> let+ e = self <* skip_white <* char '>' in
+           Ast.Field_type.Set e)
+    <|> (exact_keyword "map" *> optional_ cpp_type_ *> skip_white *> char '<'
+        *> let+ k = self
+           and+ _ = skip_white *> char ','
+           and+ v = self
+           and+ _ = skip_white <* char '>' in
+           Ast.Field_type.Map (k, v))
+    <?> "expected container type"
+  and+ meta = metadata in
+  Ast.Field_type.{ view; meta }
 
 let field_type =
   fix @@ fun self ->
   (skip_white
-  *> let+ s = base_type in
-     Ast.Field_type.Base s)
+  *> let+ s = base_type and+ meta = metadata in
+     Ast.Field_type.{ view = Base s; meta })
   <|> container_type self
-  <|> (let* s = identifier in
+  <|> (let* s = identifier and* meta = metadata in
        if s = "list" || s = "map" || s = "set" then
          fail "bad container"
        else
-         return @@ Ast.Field_type.Named s)
-  <?> "expected field type"
-
-let equal = skip_white *> char '='
-let in_braces p = skip_white *> char '{' *> p <* skip_white <* char '}'
-
-(* parse (k1='v1', k2='v2') *)
-let metadata =
-  skip_white
-  *> try_or (char '(')
-       ~f:(fun _ ->
-         sep1
-           ~by:(skip_white *> char ',')
-           (let+ a = identifier and+ _ = equal and+ b = literal_ in
-            a, b)
-         <* skip_white <* char ')')
-       ~else_:(return [])
+         return @@ Ast.Field_type.{ view = Named s; meta })
+  <?> "expected type"
 
 let header : Ast.Header.t option P.t =
   skip_white
@@ -241,22 +246,30 @@ let header : Ast.Header.t option P.t =
        ]
        ~else_:(return None)
 
-let enum_cases =
+let list_until_ p ~until:close =
   let rec loop acc =
     skip_white
-    *> try_or identifier
-         ~f:(fun e_name ->
-           skip_white
-           *> let* e_num =
-                (equal
-                *> let+ n = skip_white *> int_const_ in
-                   Some n)
-                <|> return None
-              and* _ = optional_ list_sep_ in
-              loop @@ ({ Ast.Definition.e_num; e_name } :: acc))
-         ~else_:(return @@ List.rev acc)
+    *> try_or (lookahead_ignore close)
+         ~f:(fun _ -> return @@ List.rev acc)
+         ~else_:
+           ( suspend @@ fun () ->
+             let* x = p in
+             loop (x :: acc) )
   in
   loop []
+
+let enum_cases =
+  let case =
+    let+ e_name = identifier
+    and+ e_num =
+      skip_white
+      *> ((let+ _ = equal and+ n = skip_white *> int_const_ in
+           Some n)
+         <|> return None)
+    and+ _ = optional_ list_sep_ in
+    { Ast.Definition.e_num; e_name }
+  in
+  list_until_ ~until:(char '}') case
 
 let field_id =
   (let+ n = int_const_ <* char ':' in
@@ -269,28 +282,42 @@ let field_req =
      <|> exact_keyword "optional" *> return Ast.Field.Optional
      <|> return Ast.Field.Default)
 
-let struct_fields =
-  let rec loop acc =
-    skip_white
-    *> try_or
-         (lookahead_ignore (char '}'))
-         ~f:(fun () -> return @@ Ast.Struct_fields.{ fields = List.rev acc })
-         ~else_:
-           ( suspend @@ fun () ->
-             let* id = field_id
-             and* req = field_req
-             and* ty = field_type
-             and* name = identifier
-             and* default =
-               (let+ v = equal *> const_value in
-                Some v)
-               <|> return None
-             and* _ = metadata
-             and* _ = optional_ list_sep_ in
-             let f = { Ast.Field.id; req; ty; name; default } in
-             loop (f :: acc) )
+let field =
+  let+ id = field_id
+  and+ req = field_req
+  and+ ty = field_type
+  and+ name = identifier
+  and+ default =
+    (let+ v = equal *> const_value in
+     Some v)
+    <|> return None
+  and+ _ = metadata
+  and+ _ = optional_ list_sep_ in
+  { Ast.Field.id; req; ty; name; default }
+
+let field_list = list_until_ ~until:(char '}') field
+
+let service_functions =
+  let fun_ =
+    let+ oneway = exact_keyword "oneway" *> return true <|> return false
+    and+ ty =
+      exact_keyword "void" *> return Ast.Function_type.Void
+      <|> let+ ty = field_type in
+          Ast.Function_type.Ty ty
+    and+ name = identifier
+    and+ args = in_parens (list_until_ ~until:(char ')') field)
+    and+ _ = skip_white
+    and+ throws =
+      try_or (exact_keyword "throws")
+        ~f:(fun _ ->
+          let+ l = in_parens (list_until_ ~until:(char ')') field) in
+          Some l)
+        ~else_:(return None)
+    and+ _ = metadata
+    and+ _ = optional_ list_sep_ in
+    { Ast.Function.oneway; ty; name; args; throws }
   in
-  loop []
+  list_until_ ~until:(char '}') fun_
 
 let def : Ast.Definition.t option P.t =
   Debug_.trace_success_or_fail "def" ~print:(show_opt_ Ast.Definition.pp)
@@ -303,27 +330,57 @@ let def : Ast.Definition.t option P.t =
                  and+ name = identifier
                  and+ _ = equal
                  and+ v = const_value
+                 and+ meta = metadata
                  and+ _ = optional_ list_sep_ in
-                 Some (Ast.Definition.Const { ty; name; value = v }) );
+                 Some
+                   Ast.Definition.{ meta; view = Const { ty; name; value = v } }
+            );
             ( exact_keyword "typedef" *> return (),
               exact_keyword "typedef"
               *> let+ ty = field_type
                  and+ name = identifier
+                 and+ meta = metadata
                  and+ _ = optional_ list_sep_ in
-                 Some (Ast.Definition.TypeDef { ty; name }) );
+                 Some Ast.Definition.{ meta; view = TypeDef { ty; name } } );
             ( exact_keyword "struct" *> return (),
               exact_keyword "struct"
               *> let+ name = identifier
                  and+ _ = optional_ (skip_white *> exact_keyword "xsd_all")
-                 and+ fields = in_braces struct_fields
+                 and+ fields = in_braces field_list
+                 and+ meta = metadata
                  and+ _ = optional_ list_sep_ in
-                 Some (Ast.Definition.Struct { name; fields }) );
+                 Some Ast.Definition.{ meta; view = Struct { name; fields } } );
+            ( exact_keyword "union" *> return (),
+              exact_keyword "union"
+              *> let+ name = identifier
+                 and+ _ = optional_ (skip_white *> exact_keyword "xsd_all")
+                 and+ fields = in_braces field_list
+                 and+ meta = metadata
+                 and+ _ = optional_ list_sep_ in
+                 Some Ast.Definition.{ meta; view = Union { name; fields } } );
+            ( exact_keyword "exception" *> return (),
+              exact_keyword "exception"
+              *> let+ name = identifier
+                 and+ _ = optional_ (skip_white *> exact_keyword "xsd_all")
+                 and+ fields = in_braces field_list
+                 and+ meta = metadata
+                 and+ _ = optional_ list_sep_ in
+                 Some Ast.Definition.{ meta; view = Exception { name; fields } }
+            );
             ( exact_keyword "enum" *> return (),
               exact_keyword "enum"
               *> let+ name = identifier
                  and+ cases = in_braces enum_cases
+                 and+ meta = metadata
                  and+ _ = optional_ list_sep_ in
-                 Some (Ast.Definition.Enum { name; cases }) );
+                 Some Ast.Definition.{ meta; view = Enum { name; cases } } );
+            ( exact_keyword "service" *> return (),
+              exact_keyword "service"
+              *> let+ name = identifier
+                 and+ funs = in_braces service_functions
+                 and+ meta = metadata
+                 and+ _ = optional_ list_sep_ in
+                 Some Ast.Definition.{ meta; view = Service { name; funs } } );
             eoi, return None;
           ]
 

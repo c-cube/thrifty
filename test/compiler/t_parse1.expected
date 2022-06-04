@@ -9,10 +9,17 @@ ty = (Ok { headers: [];
                  const y : BOOL := false;
                  const my_lovely_str : STRING := "hello world !";
                  typedef truthvals := set< BOOL >;
-                 enum foo { A; B; C = 10; };
+                 enum foo { A = 1; B; C = 10; };
+                 enum foo2 { DEAD = 0; ALIVE = 1; S_CAT = 10000; };
                  struct bar {
                    (1:) x:  I32 := 42;
                    (2:) all_done:  set< BOOL >;
                    yup:  BOOL;
-                 };]
+                 };
+                 service Foo {
+                   void startLaunch ((1:) missile:  I32 := 42;)
+                   BOOL isLaunched ()
+                   oneway void ping () throws ((2:) all_done:  set< BOOL >;)
+                 };
+                 struct Yolo { (1:) swag:  set< I32 (x = 'x') >; } (ocaml = 'yep yep');]
           })
