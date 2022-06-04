@@ -76,6 +76,8 @@ module P_file1 = struct
     const string my_lovely_str = "hello world !";
 
   typedef truthvals = set<bool>;
+
+  enum foo { A, B, C = 10; }
  |}
 
   let f = Parser.parse_string Parser.file s;;

@@ -1,6 +1,7 @@
 module Fmt = CCFormat
 
 let fpf = Fmt.fprintf
+let pp_list_sp ppx = Fmt.list ~sep:(fun out () -> fpf out "@ ") ppx
 
 module Const_value = struct
   type t =
@@ -18,8 +19,8 @@ module Const_value = struct
     | String s -> fpf out "%S" s
     | List l -> Fmt.Dump.list pp out l
     | Map l ->
-      let pp_pair out (k, v) = fpf out "@[%a: %a@]" pp k pp v in
-      fpf out "{@[%a@]}" (Fmt.list pp_pair) l
+      let pp_pair out (k, v) = fpf out "@[%a: %a@];" pp k pp v in
+      fpf out "{@[%a@]}" (pp_list_sp pp_pair) l
 end
 
 type identifier = string
@@ -75,9 +76,19 @@ module Header = struct
 end
 
 module Definition = struct
+  type enum_case = { e_name: identifier; e_num: int option }
+
   type t =
     | Const of { ty: Field_type.t; name: identifier; value: Const_value.t }
     | TypeDef of { ty: Field_type.t; name: identifier }
+    | Enum of { name: identifier; cases: enum_case list }
+
+  let pp_enum_case out (e : enum_case) =
+    let pp_n out = function
+      | None -> ()
+      | Some n -> fpf out " = %d" n
+    in
+    fpf out "%s%a;" e.e_name pp_n e.e_num
 
   let pp out = function
     | Const { ty; name; value } ->
@@ -85,6 +96,9 @@ module Definition = struct
         value
     | TypeDef { ty; name } ->
       fpf out "@[typedef %s :=@ %a@];" name Field_type.pp ty
+    | Enum { name; cases } ->
+      fpf out "@[<2>enum %s {@;<1 0>%a@;<1 -2>}@];" name
+        (pp_list_sp pp_enum_case) cases
 
   let show = Format.asprintf "%a" pp
 end
@@ -95,8 +109,6 @@ module File = struct
   let make headers defs : t = { headers; defs }
 
   let pp out self =
-    fpf out "{@[ headers: %a;@ defs: %a@ @]}" (Fmt.Dump.list Header.pp)
-      self.headers
-      (Fmt.Dump.list Definition.pp)
-      self.defs
+    fpf out "{@[ headers: [@[<hv>%a@]];@ defs: [@[<hv>%a@]]@ @]}"
+      (pp_list_sp Header.pp) self.headers (pp_list_sp Definition.pp) self.defs
 end

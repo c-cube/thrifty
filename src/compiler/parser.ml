@@ -47,6 +47,13 @@ let identifier =
      and+ rest = take_if is_letter_or_digit_under in
      String.make 1 c ^ Slice.to_string rest
 
+let namespace_id =
+  skip_white
+  *> (char '*' *> return "*"
+     <|> let+ c = char_if is_letter_or_under
+         and+ rest = take_if (fun c -> not @@ is_white c) in
+         String.make 1 c ^ Slice.to_string rest)
+
 let exact_keyword s =
   let* s' = identifier in
   if s = s' then
@@ -65,7 +72,11 @@ let int_const_ =
         | _ when acc = 0 -> `Fail "expected an int"
         | _ -> `Stop acc)
   in
-  Ast.Const_value.Int (Int64.of_int c)
+  (if sign then
+    1
+  else
+    -1)
+  * c
 
 let literal_ =
   skip_white
@@ -134,7 +145,8 @@ let const_value : Ast.Const_value.t P.t =
              (char_if (function
                | '-' | '+' | '0' .. '9' -> true
                | _ -> false)),
-           int_const_ );
+           let+ n = int_const_ in
+           Ast.Const_value.Int (Int64.of_int n) );
          ( lookahead_ignore
              (char_if (function
                | '"' | '\'' -> true
@@ -188,6 +200,21 @@ let field_type =
          return @@ Ast.Field_type.Named s)
   <?> "expected field type"
 
+let equal = skip_white *> char '='
+let in_braces p = skip_white *> char '{' *> p <* skip_white <* char '}'
+
+(* parse (k1='v1', k2='v2') *)
+let metadata =
+  skip_white
+  *> try_or (char '(')
+       ~f:(fun _ ->
+         sep1
+           ~by:(skip_white *> char ',')
+           (let+ a = identifier and+ _ = equal and+ b = literal_ in
+            a, b)
+         <* skip_white <* char ')')
+       ~else_:(return [])
+
 let header : Ast.Header.t option P.t =
   skip_white
   *> try_or_l ~msg:"expected header"
@@ -199,11 +226,34 @@ let header : Ast.Header.t option P.t =
          ( exact_keyword "cpp_include" *> return (),
            exact_keyword "cpp_include"
            *> let+ s = literal_ in
-              Some (Ast.Header.Cpp_include s) )
-         (* TODO: namespace *);
+              Some (Ast.Header.Cpp_include s) );
+         ( exact_keyword "namespace" *> return (),
+           exact_keyword "namespace"
+           *> let+ sc = namespace_id
+              and+ ns = namespace_id
+              and+ _m = metadata
+              and+ _ = optional_ list_sep_ in
+              Some (Ast.Header.Namespace (sc, ns)) );
          eoi, return None;
        ]
        ~else_:(return None)
+
+let enum_cases =
+  let rec loop acc =
+    skip_white
+    *> try_or identifier
+         ~f:(fun e_name ->
+           skip_white
+           *> let* e_num =
+                (equal
+                *> let+ n = skip_white *> int_const_ in
+                   Some n)
+                <|> return None
+              and* _ = optional_ list_sep_ in
+              loop @@ ({ Ast.Definition.e_num; e_name } :: acc))
+         ~else_:(return @@ List.rev acc)
+  in
+  loop []
 
 let def : Ast.Definition.t option P.t =
   Debug_.trace_success_or_fail "def" ~print:(show_opt_ Ast.Definition.pp)
@@ -214,17 +264,23 @@ let def : Ast.Definition.t option P.t =
               exact_keyword "const"
               *> let+ ty = field_type
                  and+ name = identifier
-                 and+ _ = skip_white *> char '='
+                 and+ _ = equal
                  and+ v = const_value
                  and+ _ = optional_ list_sep_ in
                  Some (Ast.Definition.Const { ty; name; value = v }) );
             ( exact_keyword "typedef" *> return (),
               exact_keyword "typedef"
               *> let+ name = identifier
-                 and+ _ = skip_white *> char '='
+                 and+ _ = equal
                  and+ ty = field_type
                  and+ _ = optional_ list_sep_ in
                  Some (Ast.Definition.TypeDef { ty; name }) );
+            ( exact_keyword "enum" *> return (),
+              exact_keyword "enum"
+              *> let+ name = identifier
+                 and+ cases = in_braces enum_cases
+                 and+ _ = optional_ list_sep_ in
+                 Some (Ast.Definition.Enum { name; cases }) );
             eoi, return None;
           ]
 
