@@ -1,7 +1,6 @@
 module Fmt = CCFormat
-open Types
 
-let prot = Debug_protocols.debug_write ()
+let prot = Debug_protocol.debug_write ()
 
 let () =
   prot#write_struct_begin "Foo";
@@ -16,5 +15,5 @@ let () =
 
 let () =
   Fmt.printf "tokens: %a@."
-    (Fmt.Dump.list Debug_protocols.Token.pp)
+    (Fmt.Dump.list Debug_protocol.Token.pp)
     prot#get_tokens
