@@ -9,5 +9,10 @@ ty = (Ok { headers: [];
                  const y : BOOL := false;
                  const my_lovely_str : STRING := "hello world !";
                  typedef truthvals := set< BOOL >;
-                 enum foo { A; B; C = 10; };]
+                 enum foo { A; B; C = 10; };
+                 struct bar {
+                   (1:) x:  I32 := 42;
+                   (2:) all_done:  set< BOOL >;
+                   yup:  BOOL;
+                 };]
           })

@@ -75,9 +75,15 @@ module P_file1 = struct
   const bool y = false;
     const string my_lovely_str = "hello world !";
 
-  typedef truthvals = set<bool>;
+  typedef set<bool> truthvals ;
 
   enum foo { A, B, C = 10; }
+
+  struct bar {
+    1: i32 x = 42;
+    2: set<bool> all_done ( ohyeah= 'def' ),
+    bool yup;
+    }
  |}
 
   let f = Parser.parse_string Parser.file s;;

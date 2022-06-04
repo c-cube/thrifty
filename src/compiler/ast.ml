@@ -11,6 +11,7 @@ module Const_value = struct
     | String of string
     | List of t list
     | Map of (t * t) list
+    | Named of string
 
   let rec pp out = function
     | Bool b -> Fmt.pp_print_bool out b
@@ -21,6 +22,7 @@ module Const_value = struct
     | Map l ->
       let pp_pair out (k, v) = fpf out "@[%a: %a@];" pp k pp v in
       fpf out "{@[%a@]}" (pp_list_sp pp_pair) l
+    | Named s -> fpf out "%s" s
 end
 
 type identifier = string
@@ -41,25 +43,41 @@ module Field_type = struct
     | Map (a, b) -> fpf out "map< @[%a,@ %a@] >" pp a pp b
 end
 
-(* TODO
-   module Def_type = struct
-     type field = { name: string; ty: Field_type.t; default: Const_value.t option }
-     type t = Struct of field list | Union of field list
+module Field = struct
+  type req = Default | Required | Optional
 
-     let pp_field out (f : field) =
-       let pp_default out = function
-         | None -> ()
-         | Some d -> fpf out " := %a" Const_value.pp d
-       in
-       fpf out "@[%s: %a%a;@]" f.name Field_type.pp f.ty pp_default f.default
+  type t = {
+    id: int option;
+    req: req;
+    name: string;
+    ty: Field_type.t;
+    default: Const_value.t option;
+  }
 
-     let pp out = function
-       | Struct fields ->
-         fpf out "{@[%a@]}" (Fmt.list ~sep:(return ()) pp_field) fields
-       | Union fields ->
-         fpf out "union {@[%a@]}" (Fmt.list ~sep:(const ()) pp_field) fields
-   end
-*)
+  let string_of_req = function
+    | Default -> ""
+    | Required -> "required"
+    | Optional -> "optional"
+
+  let pp out (f : t) =
+    let pp_id out = function
+      | None -> ()
+      | Some i -> fpf out "(%d:) " i
+    in
+    let pp_default out = function
+      | None -> ()
+      | Some d -> fpf out " := %a" Const_value.pp d
+    in
+    fpf out "@[%a%s: %s %a%a;@]" pp_id f.id f.name (string_of_req f.req)
+      Field_type.pp f.ty pp_default f.default
+end
+
+module Struct_fields = struct
+  type t = { fields: Field.t list }
+
+  let pp out { fields } =
+    fpf out "{@;<1 0>%a@;<1 -2>}" (pp_list_sp Field.pp) fields
+end
 
 module Header = struct
   type namespace_scope = string
@@ -82,6 +100,7 @@ module Definition = struct
     | Const of { ty: Field_type.t; name: identifier; value: Const_value.t }
     | TypeDef of { ty: Field_type.t; name: identifier }
     | Enum of { name: identifier; cases: enum_case list }
+    | Struct of { name: identifier; fields: Struct_fields.t }
 
   let pp_enum_case out (e : enum_case) =
     let pp_n out = function
@@ -97,8 +116,10 @@ module Definition = struct
     | TypeDef { ty; name } ->
       fpf out "@[typedef %s :=@ %a@];" name Field_type.pp ty
     | Enum { name; cases } ->
-      fpf out "@[<2>enum %s {@;<1 0>%a@;<1 -2>}@];" name
+      fpf out "@[<hv2>enum %s {@;<1 0>%a@;<1 -2>}@];" name
         (pp_list_sp pp_enum_case) cases
+    | Struct { name; fields } ->
+      fpf out "@[<hv2>struct %s %a@];" name Struct_fields.pp fields
 
   let show = Format.asprintf "%a" pp
 end

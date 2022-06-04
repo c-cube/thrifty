@@ -37,14 +37,14 @@ let is_letter_or_under = function
   | 'A' .. 'Z' | 'a' .. 'z' | '_' -> true
   | _ -> false
 
-let is_letter_or_digit_under = function
-  | 'A' .. 'Z' | 'a' .. 'z' | '0' .. '9' | '_' -> true
+let is_letter_or_digit_under_dot = function
+  | 'A' .. 'Z' | 'a' .. 'z' | '0' .. '9' | '_' | '.' -> true
   | _ -> false
 
 let identifier =
   skip_white
   *> let+ c = char_if is_letter_or_under
-     and+ rest = take_if is_letter_or_digit_under in
+     and+ rest = take_if is_letter_or_digit_under_dot in
      String.make 1 c ^ Slice.to_string rest
 
 let namespace_id =
@@ -156,6 +156,9 @@ let const_value : Ast.Const_value.t P.t =
          lookahead_ignore bool_const_, bool_const_;
          lookahead_ignore (char '{'), map_const_ self;
          lookahead_ignore (char '['), list_const_ self;
+         ( lookahead_ignore identifier,
+           let+ n = identifier in
+           Ast.Const_value.Named n );
        ]
 
 let base_type =
@@ -255,6 +258,40 @@ let enum_cases =
   in
   loop []
 
+let field_id =
+  (let+ n = int_const_ <* char ':' in
+   Some n)
+  <|> return None
+
+let field_req =
+  skip_white
+  *> (exact_keyword "required" *> return Ast.Field.Required
+     <|> exact_keyword "optional" *> return Ast.Field.Optional
+     <|> return Ast.Field.Default)
+
+let struct_fields =
+  let rec loop acc =
+    skip_white
+    *> try_or
+         (lookahead_ignore (char '}'))
+         ~f:(fun () -> return @@ Ast.Struct_fields.{ fields = List.rev acc })
+         ~else_:
+           ( suspend @@ fun () ->
+             let* id = field_id
+             and* req = field_req
+             and* ty = field_type
+             and* name = identifier
+             and* default =
+               (let+ v = equal *> const_value in
+                Some v)
+               <|> return None
+             and* _ = metadata
+             and* _ = optional_ list_sep_ in
+             let f = { Ast.Field.id; req; ty; name; default } in
+             loop (f :: acc) )
+  in
+  loop []
+
 let def : Ast.Definition.t option P.t =
   Debug_.trace_success_or_fail "def" ~print:(show_opt_ Ast.Definition.pp)
   @@ skip_white
@@ -270,11 +307,17 @@ let def : Ast.Definition.t option P.t =
                  Some (Ast.Definition.Const { ty; name; value = v }) );
             ( exact_keyword "typedef" *> return (),
               exact_keyword "typedef"
-              *> let+ name = identifier
-                 and+ _ = equal
-                 and+ ty = field_type
+              *> let+ ty = field_type
+                 and+ name = identifier
                  and+ _ = optional_ list_sep_ in
                  Some (Ast.Definition.TypeDef { ty; name }) );
+            ( exact_keyword "struct" *> return (),
+              exact_keyword "struct"
+              *> let+ name = identifier
+                 and+ _ = optional_ (skip_white *> exact_keyword "xsd_all")
+                 and+ fields = in_braces struct_fields
+                 and+ _ = optional_ list_sep_ in
+                 Some (Ast.Definition.Struct { name; fields }) );
             ( exact_keyword "enum" *> return (),
               exact_keyword "enum"
               *> let+ name = identifier
