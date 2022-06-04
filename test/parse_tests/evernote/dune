@@ -1,29 +1,34 @@
 (rule
  (alias runtest)
+ (deps (:file Errors.thrift))
  (package smol_thrift_compiler)
  (action
-  (run ./../bin/parse_print.exe ./Errors.thrift)))
+  (run ./../bin/parse_print.exe %{file})))
 
 (rule
  (alias runtest)
+ (deps (:file Limits.thrift))
  (package smol_thrift_compiler)
  (action
-  (run ./../bin/parse_print.exe ./Limits.thrift)))
+  (run ./../bin/parse_print.exe %{file})))
 
 (rule
  (alias runtest)
+ (deps (:file NoteStore.thrift))
  (package smol_thrift_compiler)
  (action
-  (run ./../bin/parse_print.exe ./NoteStore.thrift)))
+  (run ./../bin/parse_print.exe %{file})))
 
 (rule
  (alias runtest)
+ (deps (:file Types.thrift))
  (package smol_thrift_compiler)
  (action
-  (run ./../bin/parse_print.exe ./Types.thrift)))
+  (run ./../bin/parse_print.exe %{file})))
 
 (rule
  (alias runtest)
+ (deps (:file UserStore.thrift))
  (package smol_thrift_compiler)
  (action
-  (run ./../bin/parse_print.exe ./UserStore.thrift)))
+  (run ./../bin/parse_print.exe %{file})))
