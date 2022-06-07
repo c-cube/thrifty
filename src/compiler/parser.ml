@@ -210,31 +210,31 @@ let container_type self =
   let+ view =
     (exact_keyword "list" *> skip_white *> char '<'
     *> let+ e = self <* skip_white <* char '>' <* optional_ cpp_type_ in
-       Ast.Field_type.List e)
+       Ast.Type.List e)
     <|> (exact_keyword "set" *> optional_ cpp_type_ *> skip_white *> char '<'
         *> let+ e = self <* skip_white <* char '>' in
-           Ast.Field_type.Set e)
+           Ast.Type.Set e)
     <|> (exact_keyword "map" *> optional_ cpp_type_ *> skip_white *> char '<'
         *> let+ k = self
            and+ _ = skip_white *> char ','
            and+ v = self
            and+ _ = skip_white <* char '>' in
-           Ast.Field_type.Map (k, v))
+           Ast.Type.Map (k, v))
     <?> "expected container type"
   and+ meta = metadata in
-  Ast.Field_type.{ view; meta }
+  Ast.Type.{ view; meta }
 
 let field_type =
   fix @@ fun self ->
   (skip_white
   *> let+ s = base_type and+ meta = metadata in
-     Ast.Field_type.{ view = Base s; meta })
+     Ast.Type.{ view = Base s; meta })
   <|> container_type self
   <|> (let* s = identifier and* meta = metadata in
        if s = "list" || s = "map" || s = "set" then
          fail "bad container"
        else
-         return @@ Ast.Field_type.{ view = Named s; meta })
+         return @@ Ast.Type.{ view = Named s; meta })
   <?> "expected type"
 
 let header : Ast.Header.t option P.t =
@@ -347,7 +347,7 @@ let def : Ast.Definition.t option P.t =
               and+ v = const_value
               and+ meta = metadata
               and+ _ = optional_ list_sep_ in
-              Some Ast.Definition.{ meta; view = Const { ty; name; value = v } }
+              Some Ast.Definition.{ name; meta; view = Const { ty; value = v } }
          );
          ( exact_keyword "typedef" *> return (),
            exact_keyword "typedef"
@@ -355,7 +355,7 @@ let def : Ast.Definition.t option P.t =
               and+ name = identifier
               and+ meta = metadata
               and+ _ = optional_ list_sep_ in
-              Some Ast.Definition.{ meta; view = TypeDef { ty; name } } );
+              Some Ast.Definition.{ name; meta; view = TypeDef { ty } } );
          ( exact_keyword "struct" *> return (),
            exact_keyword "struct"
            *> let+ name = identifier
@@ -363,7 +363,7 @@ let def : Ast.Definition.t option P.t =
               and+ fields = in_braces field_list
               and+ meta = metadata
               and+ _ = optional_ list_sep_ in
-              Some Ast.Definition.{ meta; view = Struct { name; fields } } );
+              Some Ast.Definition.{ name; meta; view = Struct { fields } } );
          ( exact_keyword "union" *> return (),
            exact_keyword "union"
            *> let+ name = identifier
@@ -371,7 +371,7 @@ let def : Ast.Definition.t option P.t =
               and+ fields = in_braces field_list
               and+ meta = metadata
               and+ _ = optional_ list_sep_ in
-              Some Ast.Definition.{ meta; view = Union { name; fields } } );
+              Some Ast.Definition.{ name; meta; view = Union { fields } } );
          ( exact_keyword "exception" *> return (),
            exact_keyword "exception"
            *> let+ name = identifier
@@ -379,14 +379,14 @@ let def : Ast.Definition.t option P.t =
               and+ fields = in_braces field_list
               and+ meta = metadata
               and+ _ = optional_ list_sep_ in
-              Some Ast.Definition.{ meta; view = Exception { name; fields } } );
+              Some Ast.Definition.{ name; meta; view = Exception { fields } } );
          ( exact_keyword "enum" *> return (),
            exact_keyword "enum"
            *> let+ name = identifier
               and+ cases = in_braces enum_cases
               and+ meta = metadata
               and+ _ = optional_ list_sep_ in
-              Some Ast.Definition.{ meta; view = Enum { name; cases } } );
+              Some Ast.Definition.{ name; meta; view = Enum { cases } } );
          ( exact_keyword "service" *> return (),
            exact_keyword "service"
            *> let+ name = identifier
@@ -400,7 +400,7 @@ let def : Ast.Definition.t option P.t =
               and+ meta = metadata
               and+ _ = optional_ list_sep_ in
               Some
-                Ast.Definition.{ meta; view = Service { name; extends; funs } }
+                Ast.Definition.{ name; meta; view = Service { extends; funs } }
          );
          eoi, return None;
        ]

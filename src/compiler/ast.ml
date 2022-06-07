@@ -38,7 +38,7 @@ module Metadata = struct
     List.iter (pp_kv out) self
 end
 
-module Field_type = struct
+module Type = struct
   type t = { view: view; meta: Metadata.t }
 
   and view =
@@ -65,7 +65,7 @@ module Field = struct
     id: int option;
     req: req;
     name: string;
-    ty: Field_type.t;
+    ty: Type.t;
     default: Const_value.t option;
   }
 
@@ -83,16 +83,16 @@ module Field = struct
       | None -> ()
       | Some d -> fpf out " := %a" Const_value.pp d
     in
-    fpf out "@[%a%s: %s %a%a;@]" pp_id f.id f.name (string_of_req f.req)
-      Field_type.pp f.ty pp_default f.default
+    fpf out "@[%a%s: %s %a%a;@]" pp_id f.id f.name (string_of_req f.req) Type.pp
+      f.ty pp_default f.default
 end
 
 module Function_type = struct
-  type t = Void | Ty of Field_type.t
+  type t = Void | Ty of Type.t
 
   let pp out = function
     | Void -> fpf out "void"
-    | Ty ty -> Field_type.pp out ty
+    | Ty ty -> Type.pp out ty
 end
 
 module Function = struct
@@ -137,19 +137,15 @@ module Definition = struct
   type enum_case = { e_name: identifier; e_num: int option }
 
   type view =
-    | Const of { ty: Field_type.t; name: identifier; value: Const_value.t }
-    | TypeDef of { ty: Field_type.t; name: identifier }
-    | Enum of { name: identifier; cases: enum_case list }
-    | Struct of { name: identifier; fields: Field.t list }
-    | Union of { name: identifier; fields: Field.t list }
-    | Exception of { name: identifier; fields: Field.t list }
-    | Service of {
-        name: identifier;
-        extends: identifier option;
-        funs: Function.t list;
-      }
+    | Const of { ty: Type.t; value: Const_value.t }
+    | TypeDef of { ty: Type.t }
+    | Enum of { cases: enum_case list }
+    | Struct of { fields: Field.t list }
+    | Union of { fields: Field.t list }
+    | Exception of { fields: Field.t list }
+    | Service of { extends: identifier option; funs: Function.t list }
 
-  type t = { meta: Metadata.t; view: view }
+  type t = { name: identifier; meta: Metadata.t; view: view }
 
   let pp_enum_case out (e : enum_case) =
     let pp_n out = function
@@ -162,22 +158,19 @@ module Definition = struct
     let pp_fields out l =
       fpf out "{@;<1 0>%a@;<1 -2>}" (pp_list_sp Field.pp) l
     in
+    let name = self.name in
     (match self.view with
-    | Const { ty; name; value } ->
-      fpf out "@[const %s : %a :=@ %a@]" name Field_type.pp ty Const_value.pp
-        value
-    | TypeDef { ty; name } ->
-      fpf out "@[typedef %s :=@ %a@]" name Field_type.pp ty
-    | Enum { name; cases } ->
+    | Const { ty; value } ->
+      fpf out "@[const %s : %a :=@ %a@]" name Type.pp ty Const_value.pp value
+    | TypeDef { ty } -> fpf out "@[typedef %s :=@ %a@]" name Type.pp ty
+    | Enum { cases } ->
       fpf out "@[<hv2>enum %s {@;<1 0>%a@;<1 -2>}@]" name
         (pp_list_sp pp_enum_case) cases
-    | Struct { name; fields } ->
-      fpf out "@[<hv2>struct %s %a@]" name pp_fields fields
-    | Union { name; fields } ->
-      fpf out "@[<hv2>union %s %a@]" name pp_fields fields
-    | Exception { name; fields } ->
+    | Struct { fields } -> fpf out "@[<hv2>struct %s %a@]" name pp_fields fields
+    | Union { fields } -> fpf out "@[<hv2>union %s %a@]" name pp_fields fields
+    | Exception { fields } ->
       fpf out "@[<hv2>exception %s %a@]" name pp_fields fields
-    | Service { name; extends; funs } ->
+    | Service { extends; funs } ->
       let pp_extend out = function
         | None -> ()
         | Some e -> fpf out "@ extends %s" e

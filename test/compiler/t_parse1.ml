@@ -62,7 +62,7 @@ module P_field_ty1 = struct
 
   let ty = Parser.parse_string Parser.field_type s;;
 
-  Fmt.printf "ty = %a@." (Fmt.Dump.result Ast.Field_type.pp) ty
+  Fmt.printf "ty = %a@." (Fmt.Dump.result Ast.Type.pp) ty
 end
 
 module P_file1 = struct

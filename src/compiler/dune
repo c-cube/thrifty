@@ -2,7 +2,7 @@
  (name smol_thrift_compiler)
  (package smol_thrift_compiler)
  (modules smol_thrift_compiler)
- (libraries smol_thrift)
+ (libraries smol_thrift smol_thrift_compiler.lib)
  (public_name smol_thrift_compiler))
 
 (library
