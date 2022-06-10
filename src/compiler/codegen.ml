@@ -24,11 +24,16 @@ end = struct
     let out = Format.formatter_of_buffer buf in
     { out; buf }
 
+  let prelude file =
+    spf
+      "(* generated from %S using smol_thrift codegen *)\n\
+       [@@@ocaml.warning {|-26-27|}]\n\
+       let pp_pair ppk ppv out (k,v) = Format.fprintf out {|(%%a,%%a)|} ppk k \
+       ppv v\n"
+      file
+
   let add_prelude ~filename self =
-    fpf self.out
-      "(* generated from %s using smol_thrift codegen *)@.[@@@@@@ocaml.warning \
-       \"-26-27\"]@."
-      filename;
+    fpf self.out "%s@." (prelude filename);
     fpf self.out "open Smol_thrift.Types@.";
     ()
 
@@ -41,6 +46,7 @@ end = struct
     Buffer.output_buffer oc self.buf
 
   let mangle_name (s : string) : string = String.uncapitalize_ascii s
+  let mangle_cstor (s : string) : string = String.capitalize_ascii s
 
   let rec pp_ty out (ty : A.Type.t) : unit =
     match ty.view with
@@ -90,11 +96,221 @@ end = struct
       fpf out "@]]"
     | Ast.Const_value.Named s -> fpf out "%s" s
 
+  (* generate the constant definition *)
   let cg_const (self : t) name ty value : unit =
     let name = mangle_name name in
-    fpf self.out "let %s : %a = %a;;@." name pp_ty ty
+    fpf self.out "@.@[<2>let %s : %a =@ %a@]@." name pp_ty ty
       (pp_const_value ~ty:(Some ty))
       value
+
+  (** Generate a printer {b expression} for [out (self:ty)] *)
+  let rec cg_printer_for_ty out (ty : A.Type.t) : unit =
+    match ty.view with
+    | Named s -> fpf out "pp_%s out self" (mangle_name s)
+    | List ty | Set ty ->
+      fpf out "Format.pp_print_list@ %a@ out self" cg_printer_fun_for_ty ty
+    | Map (ty1, ty2) ->
+      fpf out "Format.pp_print_list@ (@[pp_pair@ %a@ %a@])@ out self"
+        cg_printer_fun_for_ty ty1 cg_printer_fun_for_ty ty2
+    | Base b ->
+      let fmt =
+        match b with
+        | T_BOOL -> "%B"
+        | T_BYTE -> "%C"
+        | T_I8 -> "%C"
+        | T_I16 -> "%d"
+        | T_I32 -> "%ld"
+        | T_I64 -> "%Ld"
+        | T_DOUBLE -> "%f"
+        | T_STRING -> "%S"
+        | T_BINARY -> "%S"
+        | T_STRUCT | T_MAP | T_SET | T_LIST ->
+          failwith
+          @@ Format.asprintf "bad base type %s" (string_of_field_type b)
+      in
+      fpf out "Format.fprintf out %S self" fmt
+
+  (** Generate a printer {b function} for this type *)
+  and cg_printer_fun_for_ty out (ty : A.Type.t) =
+    match ty.view with
+    | Named s -> fpf out "pp_%s" (mangle_name s)
+    | List ty | Set ty ->
+      fpf out "(@[Format.pp_print_list@ %a@])" cg_printer_fun_for_ty ty
+    | Map (ty1, ty2) ->
+      fpf out "(@[Format.pp_print_list@ (@[pp_pair@ %a@ %a@])@])"
+        cg_printer_fun_for_ty ty1 cg_printer_fun_for_ty ty2
+    | _ -> fpf out "(@[fun out self ->@ %a@])" cg_printer_for_ty ty
+
+  let cg_typedef ~pp (self : t) name ty : unit =
+    let name = mangle_name name in
+    fpf self.out {|@.@[<2>type %s = %a@]@.|} name pp_ty ty;
+    if pp then
+      fpf self.out {|@.@[<2>let pp_%s out (self:%s) =@ %a@]@.|} name name
+        cg_printer_for_ty ty
+
+  let cg_enum ~pp (self : t) name cases : unit =
+    let name = mangle_name name in
+
+    let cases =
+      let n = ref 0 in
+      List.map
+        (fun { A.Definition.e_name; e_num } ->
+          ( e_name,
+            match e_num with
+            | None ->
+              let x = !n in
+              incr n;
+              x
+            | Some i ->
+              n := i + 1;
+              i ))
+        cases
+    in
+
+    (* type def *)
+    fpf self.out {|@.@[<v2>type %s =|} name;
+    List.iter (fun (c, _) -> fpf self.out "@ | %s" (mangle_cstor c)) cases;
+    fpf self.out {|@]@.|};
+
+    (* pp *)
+    if pp then (
+      fpf self.out {|@.@[<v2>let pp_%s out self = match self with|} name;
+      List.iter
+        (fun (c, _) ->
+          fpf self.out {|@ | %s -> Format.fprintf out %S|} (mangle_cstor c)
+            (mangle_cstor c))
+        cases;
+      fpf self.out {|@.|}
+    );
+
+    (* to_int *)
+    fpf self.out {|@.@[<2>let int_of_%s = function@ |} name;
+    List.iter
+      (fun (c, n) -> fpf self.out "@ | %s -> %d" (mangle_cstor c) n)
+      cases;
+    fpf self.out {|@.|};
+
+    (* of_int *)
+    fpf self.out {|@.@[<v2>let %s_of_int = function|} name;
+    List.iter
+      (fun (c, n) -> fpf self.out "@ | %d -> %s" n (mangle_cstor c))
+      cases;
+    fpf self.out
+      {|@ | n -> failwith (Printf.sprintf "unknown enum member %%d for `%s`" n)|}
+      name;
+    fpf self.out {|@.|};
+
+    ()
+
+  (* print with "and" as separator *)
+  let pp_l_and ppx out l =
+    List.iteri
+      (fun i x ->
+        if i > 0 then fpf out "@]@ @[<v2>and ";
+        ppx ~first:(i = 0) out x)
+      l
+
+  (** Define (mutually recursive) types *)
+  let cg_new_types ~pp (self : t) (defs : (_ * _ * Ast.Field.t list) list) :
+      unit =
+    let defs = List.map (fun (n, k, fs) -> mangle_name n, k, fs) defs in
+
+    let pp_field out (f : A.Field.t) =
+      fpf out "%s: %a" (mangle_name f.name) pp_ty f.ty
+    in
+    let pp_fields out (fs : A.Field.t list) =
+      List.iteri
+        (fun i f ->
+          if i > 0 then fpf out ";@ ";
+          pp_field out f)
+        fs
+    in
+
+    (* define types *)
+    let cg_def_type ~first out (name, k, fields) =
+      if first then
+        fpf out "%s"
+          (match k with
+          | `Struct -> "type "
+          | `Union -> "union "
+          | `Exception -> "exception ");
+      match k with
+      | `Struct -> fpf out "%s = {@;%a@;<1 -2>}" name pp_fields fields
+      | `Exception when fields = [] -> fpf out "%s" name
+      | `Exception -> fpf out "%s of {@;%a@;<1 -2>}" name pp_fields fields
+      | `Union ->
+        fpf out "%s = " name;
+        List.iter
+          (fun (f : A.Field.t) ->
+            fpf out "@ | %s of %a" (mangle_cstor f.name) pp_ty f.ty)
+          fields
+    in
+
+    fpf self.out {|@.@[<v>@[<v2>%a@]@]@.|} (pp_l_and cg_def_type) defs;
+
+    (* printer *)
+    let cg_def_pp ~first out (name, k, fields) =
+      if first then
+        fpf out "let rec pp_%s out (self:%s) = " name name
+      else
+        fpf out "pp_%s out (self:%s) = " name name;
+      (match k with
+      | `Exception when fields = [] -> ()
+      | `Exception -> fpf out "let (%s self) = self in@ " (mangle_cstor name)
+      | `Union -> fpf out "match self with@ "
+      | `Struct -> ());
+      match k with
+      | `Struct ->
+        fpf out {|Format.fprintf out "{@@[";@ |};
+        List.iter
+          (fun (f : A.Field.t) ->
+            fpf out {|@[<2>Format.fprintf out "%s=%%a"@ %a self.%s@];@ |}
+              (mangle_name f.name) cg_printer_fun_for_ty f.ty
+              (mangle_name f.name))
+          fields;
+        fpf out {|Format.fprintf out "@@]}";|}
+      | `Exception when fields = [] ->
+        fpf out {|Format.fprintf out "%S"|} (mangle_cstor name)
+      | `Exception ->
+        fpf out {|Format.fprintf out "%S {@@[";@ |} (mangle_cstor name);
+        List.iter
+          (fun (f : A.Field.t) ->
+            fpf out {|@[<2>Format.fprintf out "%s=%%a"@ %a self.%s@];@ |}
+              (mangle_name f.name) cg_printer_fun_for_ty f.ty
+              (mangle_name f.name))
+          fields;
+        fpf out {|Format.fprintf out "@@]}";|}
+      | `Union ->
+        List.iter
+          (fun (f : A.Field.t) ->
+            fpf out {|@ | %s self -> Format.fprintf out "%S (%%a)" %a self|}
+              (mangle_cstor f.name) (mangle_cstor f.name) cg_printer_fun_for_ty
+              f.ty)
+          fields
+    in
+    if pp then fpf self.out {|@.@[<v>@[<v2>%a@]@]@.|} (pp_l_and cg_def_pp) defs;
+    ()
+
+  let cg_service (self : t) name ~extends funs : unit =
+    let name = mangle_name name in
+    (* def *)
+    fpf self.out "@.@[<v2>class virtual server_%s = object@ " name;
+
+    (* inherit from extend *)
+    Option.iter
+      (fun e -> fpf self.out "inherit server_%s@ " (mangle_name e))
+      extends;
+
+    List.iter
+      (fun (f : A.Function.t) ->
+        fpf self.out "(* todo: method %S *)@ " f.name;
+        ())
+      funs;
+
+    (* TODO: emit "process : protocol_in -> protocol_out -> unit" based
+       on the name + methods *)
+    fpf self.out "@;<1 -2>end@]@.";
+    ()
 
   (*
 
@@ -489,23 +705,49 @@ end = struct
 
   *)
 
+  let is_newtype = function
+    | A.Definition.{ view = Struct _ | Exception _ | Union _; _ } -> true
+    | _ -> false
+
+  let as_newtype_exn (d : A.Definition.t) =
+    match d.view with
+    | A.Definition.Struct { fields } -> d.name, `Struct, fields
+    | A.Definition.Union { fields } -> d.name, `Union, fields
+    | A.Definition.Exception { fields } -> d.name, `Exception, fields
+    | _ -> failwith "not a type definition"
+
   let encode_def_scc (self : t) ~pp (defs : A.Definition.t list) : unit =
+    if !debug then
+      Format.eprintf "codegen for defs [%s]@."
+        (String.concat ";" @@ List.map (fun d -> d.A.Definition.name) defs);
+
     match defs with
     | [] -> assert false
     | [ A.Definition.{ name; view = Const { ty; value }; _ } ] ->
       cg_const self name ty value
+    | [ A.Definition.{ name; view = TypeDef { ty } } ] ->
+      cg_typedef ~pp self name ty
+    | [ A.Definition.{ name; view = Enum { cases } } ] ->
+      cg_enum ~pp self name cases
+    | defs when List.for_all is_newtype defs ->
+      cg_new_types ~pp self (List.map as_newtype_exn defs)
+    | [ A.Definition.{ name; view = Service { extends; funs } } ] ->
+      cg_service self name ~extends funs
     | defs ->
-      (* TODO
-         let { A.name; def } = d in
-         if !debug then Format.eprintf "codegen for type %s@." name;
-         fpf self.out "@[<v2>module %s = struct@," (String.capitalize_ascii name);
-         cg_ty_def_rhs_def ~lead:"type" ~self_ty:"t" name ~clique:[ name ] self.out
-           def;
-         fpf self.out "%a" (cg_ty_encode_decode ~clique:[ name ] name) def;
-         if pp then fpf self.out "%a" (cg_pp ~clique:[ name ] name) def;
-         fpf self.out "@]@.end@.@.";
-      *)
-      ()
+      failwith
+      @@ Format.asprintf "cannot generate code for definitions %a"
+           (CCFormat.Dump.list A.Definition.pp)
+           defs
+  (* TODO
+     let { A.name; def } = d in
+     if !debug then Format.eprintf "codegen for type %s@." name;
+     fpf self.out "@[<v2>module %s = struct@," (String.capitalize_ascii name);
+     cg_ty_def_rhs_def ~lead:"type" ~self_ty:"t" name ~clique:[ name ] self.out
+       def;
+     fpf self.out "%a" (cg_ty_encode_decode ~clique:[ name ] name) def;
+     if pp then fpf self.out "%a" (cg_pp ~clique:[ name ] name) def;
+     fpf self.out "@]@.end@.@.";
+  *)
 
   (* TODO
      | defs ->

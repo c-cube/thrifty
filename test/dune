@@ -8,4 +8,4 @@
  (deps
   (:file foo.thrift))
  (action
-  (run ../src/compiler/smol_thrift_compiler.exe %{file} -o %{targets})))
+  (run ../src/compiler/smol_thrift_compiler.exe --pp %{file} -o %{targets})))
