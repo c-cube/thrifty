@@ -29,7 +29,10 @@ end = struct
       "(* generated from %S using smol_thrift codegen *)\n\
        [@@@ocaml.warning {|-26-27|}]\n\
        let pp_pair ppk ppv out (k,v) = Format.fprintf out {|(%%a,%%a)|} ppk k \
-       ppv v\n"
+       ppv v\n\
+       let pp_list ppx out l = Format.fprintf out {|[@[%%a@]]|}\n\
+      \   (Format.pp_print_list ~pp_sep:(fun out () -> Format.fprintf out {|;@ \
+       |}) ppx) l"
       file
 
   let add_prelude ~filename self =
@@ -108,10 +111,10 @@ end = struct
     match ty.view with
     | Named s -> fpf out "pp_%s out self" (mangle_name s)
     | List ty | Set ty ->
-      fpf out "Format.pp_print_list@ %a@ out self" cg_printer_fun_for_ty ty
+      fpf out "pp_list@ %a@ out self" cg_printer_fun_for_ty ty
     | Map (ty1, ty2) ->
-      fpf out "Format.pp_print_list@ (@[pp_pair@ %a@ %a@])@ out self"
-        cg_printer_fun_for_ty ty1 cg_printer_fun_for_ty ty2
+      fpf out "pp_list@ (@[pp_pair@ %a@ %a@])@ out self" cg_printer_fun_for_ty
+        ty1 cg_printer_fun_for_ty ty2
     | Base b ->
       let fmt =
         match b with
@@ -134,11 +137,10 @@ end = struct
   and cg_printer_fun_for_ty out (ty : A.Type.t) =
     match ty.view with
     | Named s -> fpf out "pp_%s" (mangle_name s)
-    | List ty | Set ty ->
-      fpf out "(@[Format.pp_print_list@ %a@])" cg_printer_fun_for_ty ty
+    | List ty | Set ty -> fpf out "(@[pp_list@ %a@])" cg_printer_fun_for_ty ty
     | Map (ty1, ty2) ->
-      fpf out "(@[Format.pp_print_list@ (@[pp_pair@ %a@ %a@])@])"
-        cg_printer_fun_for_ty ty1 cg_printer_fun_for_ty ty2
+      fpf out "(@[pp_list@ (@[pp_pair@ %a@ %a@])@])" cg_printer_fun_for_ty ty1
+        cg_printer_fun_for_ty ty2
     | _ -> fpf out "(@[fun out self ->@ %a@])" cg_printer_for_ty ty
 
   let cg_typedef ~pp (self : t) name ty : unit =
@@ -202,6 +204,29 @@ end = struct
 
     ()
 
+  let cg_exception ~pp (self : t) name (fields : A.Field.t list) : unit =
+    let name = mangle_cstor name in
+
+    let pp_field out (f : A.Field.t) =
+      fpf out "%s: %a" (mangle_name f.name) pp_ty f.ty
+    in
+    let pp_fields out (fs : A.Field.t list) =
+      List.iteri
+        (fun i f ->
+          if i > 0 then fpf out ";@ ";
+          pp_field out f)
+        fs
+    in
+
+    (* type def *)
+    fpf self.out {|@.@[<v2>exception %s|} name;
+    if fields = [] then
+      ()
+    else
+      fpf self.out " of {@;%a@;<1 -2>}" pp_fields fields;
+    fpf self.out {|@]@.|};
+    ()
+
   (* print with "and" as separator *)
   let pp_l_and ppx out l =
     List.iteri
@@ -228,18 +253,11 @@ end = struct
 
     (* define types *)
     let cg_def_type ~first out (name, k, fields) =
-      if first then
-        fpf out "%s"
-          (match k with
-          | `Struct -> "type "
-          | `Union -> "union "
-          | `Exception -> "exception ");
+      if first then fpf out "type ";
       match k with
       | `Struct -> fpf out "%s = {@;%a@;<1 -2>}" name pp_fields fields
-      | `Exception when fields = [] -> fpf out "%s" name
-      | `Exception -> fpf out "%s of {@;%a@;<1 -2>}" name pp_fields fields
       | `Union ->
-        fpf out "%s = " name;
+        fpf out "%s =" name;
         List.iter
           (fun (f : A.Field.t) ->
             fpf out "@ | %s of %a" (mangle_cstor f.name) pp_ty f.ty)
@@ -256,8 +274,8 @@ end = struct
         fpf out "pp_%s out (self:%s) = " name name;
       (match k with
       | `Exception when fields = [] -> ()
-      | `Exception -> fpf out "let (%s self) = self in@ " (mangle_cstor name)
-      | `Union -> fpf out "match self with@ "
+      | `Exception -> fpf out "let (%s self) = self in @" (mangle_cstor name)
+      | `Union -> fpf out "match self with"
       | `Struct -> ());
       match k with
       | `Struct ->
@@ -283,7 +301,8 @@ end = struct
       | `Union ->
         List.iter
           (fun (f : A.Field.t) ->
-            fpf out {|@ | %s self -> Format.fprintf out "%S (%%a)" %a self|}
+            fpf out
+              {|@ | @[%s self ->@ Format.fprintf out "%s (%%a)"@ %a self@]|}
               (mangle_cstor f.name) (mangle_cstor f.name) cg_printer_fun_for_ty
               f.ty)
           fields
@@ -706,14 +725,13 @@ end = struct
   *)
 
   let is_newtype = function
-    | A.Definition.{ view = Struct _ | Exception _ | Union _; _ } -> true
+    | A.Definition.{ view = Struct _ | Union _; _ } -> true
     | _ -> false
 
   let as_newtype_exn (d : A.Definition.t) =
     match d.view with
     | A.Definition.Struct { fields } -> d.name, `Struct, fields
     | A.Definition.Union { fields } -> d.name, `Union, fields
-    | A.Definition.Exception { fields } -> d.name, `Exception, fields
     | _ -> failwith "not a type definition"
 
   let encode_def_scc (self : t) ~pp (defs : A.Definition.t list) : unit =
@@ -729,6 +747,8 @@ end = struct
       cg_typedef ~pp self name ty
     | [ A.Definition.{ name; view = Enum { cases } } ] ->
       cg_enum ~pp self name cases
+    | [ A.Definition.{ name; view = Exception { fields } } ] ->
+      cg_exception ~pp self name fields
     | defs when List.for_all is_newtype defs ->
       cg_new_types ~pp self (List.map as_newtype_exn defs)
     | [ A.Definition.{ name; view = Service { extends; funs } } ] ->
@@ -738,6 +758,7 @@ end = struct
       @@ Format.asprintf "cannot generate code for definitions %a"
            (CCFormat.Dump.list A.Definition.pp)
            defs
+
   (* TODO
      let { A.name; def } = d in
      if !debug then Format.eprintf "codegen for type %s@." name;

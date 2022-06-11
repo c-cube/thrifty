@@ -7,6 +7,27 @@ struct Foo {
   3: bool z;
 }
 
+struct Loc {
+  1: required double long;
+  2: required double lat;
+}
+
+exception Ohno {}
+
+exception Ohno2 { 1: bool really_bad }
+
+exception Ohno3 {
+  1: string why;
+  2: Loc where;
+}
+
+// Bar defined below
+union FooOrBarOrBool {
+  1: Foo foo;
+  2: Bar bar;
+  3: bool b;
+}
+
 enum FooK {
   K1 = 1,
   K2 = 4,
@@ -17,7 +38,6 @@ struct Bar {
   1: list<list<Foo>> foos = [];
   2: optional FooK kind;
 }
-
 
 typedef list<Bar> Bar2;
 
