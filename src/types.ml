@@ -55,102 +55,98 @@ type sequence_number = int
 (** Sequence number of a message on the wire. It should be unique in
   a given client/server pair. *)
 
-class virtual protocol_write =
-  object
-    method virtual write_msg_begin
-        : string -> message_type -> sequence_number -> unit
+(** Protocol to write messages *)
+module type PROTOCOL_WRITE = sig
+  val write_msg_begin : string -> message_type -> sequence_number -> unit
+  val write_msg_end : unit -> unit
+  val write_struct_begin : string -> unit
+  val write_struct_end : unit -> unit
+  val write_field_begin : string -> field_type -> field_id -> unit
+  val write_field_end : unit -> unit
 
-    method virtual write_msg_end : unit
-    method virtual write_struct_begin : string -> unit
-    method virtual write_struct_end : unit
-    method virtual write_field_begin : string -> field_type -> field_id -> unit
-    method virtual write_field_end : unit
+  val write_field_stop : unit -> unit
+  (** Indicate that the struct is done, no more fields will be added to it *)
 
-    method virtual write_field_stop : unit
-    (** Indicate that the struct is done, no more fields will be added to it *)
+  val write_map_begin : field_type -> field_type -> size -> unit
+  val write_map_end : unit -> unit
+  val write_list_begin : field_type -> size -> unit
+  val write_list_end : unit -> unit
+  val write_set_begin : field_type -> size -> unit
+  val write_set_end : unit -> unit
+  val write_bool : bool -> unit
+  val write_byte : char -> unit
+  val write_i16 : int -> unit
+  val write_i32 : int32 -> unit
+  val write_i64 : int64 -> unit
+  val write_double : float -> unit
+  val write_string : string -> unit
+  val write_binary : string -> unit
+end
 
-    method virtual write_map_begin : field_type -> field_type -> size -> unit
-    method virtual write_map_end : unit
-    method virtual write_list_begin : field_type -> size -> unit
-    method virtual write_list_end : unit
-    method virtual write_set_begin : field_type -> size -> unit
-    method virtual write_set_end : unit
-    method virtual write_bool : bool -> unit
-    method virtual write_byte : char -> unit
-    method virtual write_i16 : int -> unit
-    method virtual write_i32 : int32 -> unit
-    method virtual write_i64 : int64 -> unit
-    method virtual write_double : float -> unit
-    method virtual write_string : string -> unit
-    method virtual write_binary : string -> unit
-  end
+type protocol_write = (module PROTOCOL_WRITE)
 
 exception Read_stop_field
 
 (** Protocol to read messages *)
-class virtual protocol_read =
-  object
-    method virtual read_msg_begin : string * message_type * sequence_number
-    method virtual read_msg_end : unit
-    method virtual read_struct_begin : string
-    method virtual read_struct_end : unit
+module type PROTOCOL_READ = sig
+  val read_msg_begin : unit -> string * message_type * sequence_number
+  val read_msg_end : unit -> unit
+  val read_struct_begin : unit -> string
+  val read_struct_end : unit -> unit
 
-    method virtual read_field_begin : string * field_type * field_id
-    (** Read the next field.
+  val read_field_begin : unit -> string * field_type * field_id
+  (** Read the next field.
         @raise Read_stop_field if there are no more fields to be read in
         that struct/exception/message *)
 
-    method virtual read_field_end : unit
-    method virtual read_map_begin : element_type * element_type * size
-    method virtual read_map_end : unit
-    method virtual read_list_begin : element_type * size
-    method virtual read_list_end : unit
-    method virtual read_set_begin : element_type * size
-    method virtual read_set_end : unit
-    method virtual read_bool : bool
-    method virtual read_byte : char
-    method virtual read_i16 : int
-    method virtual read_i32 : int32
-    method virtual read_i64 : int64
-    method virtual read_double : float
-    method virtual read_string : string
-    method virtual read_binary : string
-  end
+  val read_field_end : unit -> unit
+  val read_map_begin : unit -> element_type * element_type * size
+  val read_map_end : unit -> unit
+  val read_list_begin : unit -> element_type * size
+  val read_list_end : unit -> unit
+  val read_set_begin : unit -> element_type * size
+  val read_set_end : unit -> unit
+  val read_bool : unit -> bool
+  val read_byte : unit -> char
+  val read_i16 : unit -> int
+  val read_i32 : unit -> int32
+  val read_i64 : unit -> int64
+  val read_double : unit -> float
+  val read_string : unit -> string
+  val read_binary : unit -> string
+end
 
+type protocol_read = (module PROTOCOL_READ)
+
+module type TRANSPORT_READ = sig
+  val is_closed : unit -> bool
+  val close : unit -> unit
+  val read_byte : unit -> char
+  val read : bytes -> int -> int -> int
+end
+
+type transport_read = (module TRANSPORT_READ)
 (** Transport to read values *)
-class virtual transport_read =
-  object (self)
-    method virtual is_closed : bool
-    method virtual close : unit
-    method virtual read_byte : char
-    method virtual read : bytes -> int -> int -> int
 
-    method really_read b i n : unit =
-      let i = ref i in
-      let n = ref n in
-      while !n > 0 do
-        let len = self#read b !i !n in
-        if len = 0 then raise End_of_file;
-        i := !i + len;
-        n := !n - len
-      done
-    (** Really read [n] bytes into [b] at offset [i].
+(** Really read [n] bytes into [b] at offset [i].
      @raise End_of_file if the input is exhausted first. *)
-  end
+let really_read ((module R) : transport_read) b i n : unit =
+  let i = ref i in
+  let n = ref n in
+  while !n > 0 do
+    let len = R.read b !i !n in
+    if len = 0 then raise End_of_file;
+    i := !i + len;
+    n := !n - len
+  done
 
 (** Transport to emit values *)
-class virtual transport_write =
-  object
-    method virtual is_closed : bool
-    method virtual close : unit
-    method virtual write_byte : char -> unit
-    method virtual write : bytes -> int -> int -> unit
-    method virtual flush : unit
-  end
+module type TRANSPORT_WRITE = sig
+  val is_closed : unit -> bool
+  val close : unit -> unit
+  val write_byte : char -> unit
+  val write : bytes -> int -> int -> unit
+  val flush : unit -> unit
+end
 
-(** Bidirectional transport *)
-class virtual transport =
-  object
-    inherit transport_read
-    inherit transport_write
-  end
+type transport_write = (module TRANSPORT_WRITE)

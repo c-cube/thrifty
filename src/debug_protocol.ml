@@ -61,35 +61,32 @@ module Token = struct
 end
 
 (** A write-protocol that produces a stream of tokens *)
-let debug_write () =
+let debug_write () : (unit -> Token.t list) * protocol_write =
   let open Token in
-  object (self)
-    inherit protocol_write
-    val mutable toks : Token.t list = []
-
-    method get_tokens : Token.t list = List.rev toks
-    (** Obtain the list of tokens emitted *)
-
-    method private add t = toks <- t :: toks
-    method write_msg_begin s ty seq = self#add (T_msg_begin (s, ty, seq))
-    method write_msg_end = self#add @@ T_msg_end
-    method write_struct_begin s = self#add @@ T_struct_begin s
-    method write_struct_end = self#add @@ T_struct_end
-    method write_field_begin s ty id = self#add @@ T_field_begin (s, ty, id)
-    method write_field_end = self#add T_field_end
-    method write_field_stop = self#add T_field_stop
-    method write_map_begin t1 t2 sz = self#add @@ T_map_begin (t1, t2, sz)
-    method write_map_end = self#add T_map_end
-    method write_list_begin ty sz = self#add @@ T_list_begin (ty, sz)
-    method write_list_end = self#add T_list_end
-    method write_set_begin ty sz = self#add @@ T_set_begin (ty, sz)
-    method write_set_end = self#add T_set_end
-    method write_bool b = self#add @@ T_bool b
-    method write_byte x = self#add @@ T_byte x
-    method write_i16 x = self#add @@ T_i16 x
-    method write_i32 x = self#add @@ T_i32 x
-    method write_i64 x = self#add @@ T_i64 x
-    method write_double x = self#add @@ T_double x
-    method write_string x = self#add @@ T_string x
-    method write_binary x = self#add @@ T_binary x
-  end
+  let toks : Token.t list ref = ref [] in
+  let get_tokens () = List.rev !toks in
+  let[@inline] add t = toks := t :: !toks in
+  let module M = struct
+    let write_msg_begin s ty seq = add (T_msg_begin (s, ty, seq))
+    let write_msg_end () = add @@ T_msg_end
+    let write_struct_begin s = add @@ T_struct_begin s
+    let write_struct_end () = add @@ T_struct_end
+    let write_field_begin s ty id = add @@ T_field_begin (s, ty, id)
+    let write_field_end () = add T_field_end
+    let write_field_stop () = add T_field_stop
+    let write_map_begin t1 t2 sz = add @@ T_map_begin (t1, t2, sz)
+    let write_map_end () = add T_map_end
+    let write_list_begin ty sz = add @@ T_list_begin (ty, sz)
+    let write_list_end () = add T_list_end
+    let write_set_begin ty sz = add @@ T_set_begin (ty, sz)
+    let write_set_end () = add T_set_end
+    let write_bool b = add @@ T_bool b
+    let write_byte x = add @@ T_byte x
+    let write_i16 x = add @@ T_i16 x
+    let write_i32 x = add @@ T_i32 x
+    let write_i64 x = add @@ T_i64 x
+    let write_double x = add @@ T_double x
+    let write_string x = add @@ T_string x
+    let write_binary x = add @@ T_binary x
+  end in
+  get_tokens, (module M)

@@ -2,96 +2,84 @@
 
 open Types
 
-(** A transport that collects data into a buffer *)
-class transport_buffer =
-  object
-    val buf : Buffer.t = Buffer.create 32
-    inherit transport_write
-
-    method contents = Buffer.contents buf
-    (** Obtain the content of the buffer *)
-
-    method clear = Buffer.clear buf
-    (** Clear buffer *)
-
-    method close = ()
-    method is_closed = false
-    method write_byte c = Buffer.add_char buf c
-    method write s i len = Buffer.add_subbytes buf s i len
-    method flush = ()
-  end
+let transport_of_buffer (buf : Buffer.t) : transport_write =
+  let module M = struct
+    let close () = ()
+    let is_closed () = false
+    let write_byte c = Buffer.add_char buf c
+    let write s i len = Buffer.add_subbytes buf s i len
+    let flush () = ()
+  end in
+  (module M)
 
 (** Transport that reads from a string *)
 let transport_of_string (s : string) : transport_read =
   let off = ref 0 in
-  object
-    inherit transport_read
-    method is_closed = !off >= String.length s
-    method close = ()
+  let module M = struct
+    let is_closed () = !off >= String.length s
+    let close () = ()
 
-    method read_byte =
+    let read_byte () =
       let c = s.[!off] in
       incr off;
       c
 
-    method read buf i len =
+    let read buf i len =
       let len = min len (String.length s - !off) in
       Bytes.blit_string s !off buf i len;
       off := !off + len;
       len
-  end
+  end in
+  (module M)
 
-(** Transport that writes into a file *)
 let transport_write_file (file : string) : transport_write =
   let oc = open_out_bin file in
-  object
-    inherit transport_write
-    val mutable closed = false
-
-    method close =
-      if not closed then (
-        closed <- true;
+  let closed = ref false in
+  let module M = struct
+    let close () =
+      if not !closed then (
+        closed := true;
         close_out oc
       )
 
-    method is_closed = closed
-    method flush = flush oc
+    let is_closed () = !closed
+    let flush () = flush oc
 
-    method write_byte c =
-      assert (not closed);
+    let write_byte c =
+      assert (not !closed);
       output_char oc c
 
-    method write buf i len =
-      assert (not closed);
+    let write buf i len =
+      assert (not !closed);
       output oc buf i len
-  end
+  end in
+  (module M)
 
 (** Transport that reads from a file *)
 let transport_read_file (file : string) : transport_read =
   let ic = open_in_bin file in
-  object (self)
-    inherit transport_read
-    val mutable closed = false
-
-    method close =
-      if not closed then (
-        closed <- true;
+  let closed = ref false in
+  let module M = struct
+    let close () =
+      if not !closed then (
+        closed := true;
         close_in ic
       )
 
-    method is_closed = closed
-    method read_byte = input_char ic
+    let is_closed () = !closed
+    let read_byte () = input_char ic
 
-    method read buf i len =
+    let read buf i len =
       let n = input ic buf i len in
-      if n = 0 then self#close;
+      if n = 0 then close ();
       n
-  end
+  end in
+  (module M)
 
 let with_transport_write_file file (f : transport_write -> 'a) : 'a =
-  let tr = transport_write_file file in
-  Fun.protect ~finally:(fun () -> tr#close) (fun () -> f tr)
+  let ((module W) as tr) = transport_write_file file in
+  Fun.protect ~finally:W.close (fun () -> f tr)
 
 let with_transport_read_file file (f : transport_read -> 'a) : 'a =
-  let tr = transport_read_file file in
-  Fun.protect ~finally:(fun () -> tr#close) (fun () -> f tr)
+  let ((module R) as tr) = transport_read_file file in
+  Fun.protect ~finally:R.close (fun () -> f tr)
