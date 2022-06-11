@@ -150,3 +150,14 @@ module type TRANSPORT_WRITE = sig
 end
 
 type transport_write = (module TRANSPORT_WRITE)
+
+class virtual service_any =
+  object
+    method virtual process : protocol_read -> protocol_write -> unit
+    (** Process a message.
+      This might be provided with a different pair of protocols
+     every time it is called. *)
+
+    method virtual name : string
+    (** Name of this service. This can be useful to multiplex. *)
+  end
