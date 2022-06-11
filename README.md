@@ -15,9 +15,21 @@ MIT license
 
 ## Features
 
+### Protocols
+
 - [ ] compact protocol
-- [ ] binary protocol
-- [ ] framed transport
+- [x] binary protocol
+
+### Transports
+
 - [x] file transport
 - [x] string transport
 - [ ] TCP server
+
+### IDL Compiler
+
+- [x] parser
+- [x] code generation for types
+- [ ] code generation for printers
+- [ ] code generation for codecs
+- [ ] code generation for services
