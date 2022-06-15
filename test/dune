@@ -5,6 +5,7 @@
 
 (rule
  (targets foo_cg.ml)
+ (mode promote)
  (deps
   (:file foo.thrift))
  (action

@@ -74,6 +74,11 @@ module Field = struct
     | Required -> "required"
     | Optional -> "optional"
 
+  let is_required self =
+    match self.req with
+    | Required -> true
+    | Optional | Default -> false
+
   let id self = self.id
   let ty self = self.ty
   let name self = self.name
