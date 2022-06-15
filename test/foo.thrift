@@ -44,5 +44,7 @@ typedef list<Bar> Bar2;
 service GiveKind {
   FooK get_kind(1: Foo foo);
 
-  oneway void send_bar(1: optional Bar bar) throws (2: Foo foo);
+  void send_bar(1: optional Bar bar) throws (2: Ohno o; 3: Ohno2 o2);
+
+  oneway void send_whatev(3: FooK k);
 }

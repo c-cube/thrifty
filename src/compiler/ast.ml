@@ -74,6 +74,10 @@ module Field = struct
     | Required -> "required"
     | Optional -> "optional"
 
+  let id self = self.id
+  let ty self = self.ty
+  let name self = self.name
+
   let pp out (f : t) =
     let pp_id out = function
       | None -> ()
