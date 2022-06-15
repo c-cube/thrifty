@@ -1,5 +1,5 @@
 (* generated from "foo.thrift" using smol_thrift codegen *)
-[@@@ocaml.warning {|-26-27|}]
+[@@@ocaml.warning {|-26-27-39|}]
 let pp_pair ppk ppv out (k,v) = Format.fprintf out {|(%a,%a)|} ppk k ppv v
 let pp_list ppx out l = Format.fprintf out {|[@[%a@]]|}
    (Format.pp_print_list ~pp_sep:(fun out () -> Format.fprintf out {|;@ |}) ppx) l

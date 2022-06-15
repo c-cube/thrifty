@@ -33,7 +33,6 @@ end = struct
   type t = { buf: Buffer.t; out: fmt }
 
   let fpf (self : fmt) fmt = Format.fprintf self fmt
-  let addstr self = Format.pp_print_string self
 
   let create () : t =
     let buf = Buffer.create 1024 in
@@ -43,7 +42,7 @@ end = struct
   let prelude file =
     spf
       "(* generated from %S using smol_thrift codegen *)\n\
-       [@@@ocaml.warning {|-26-27|}]\n\
+       [@@@ocaml.warning {|-26-27-39|}]\n\
        let pp_pair ppk ppv out (k,v) = Format.fprintf out {|(%%a,%%a)|} ppk k \
        ppv v\n\
        let pp_list ppx out l = Format.fprintf out {|[@[%%a@]]|}\n\
@@ -325,7 +324,7 @@ end = struct
     (* TODO: write *)
     ()
 
-  let cg_exception ~pp (self : t) name (fields : A.Field.t list) : unit =
+  let cg_exception (self : t) name (fields : A.Field.t list) : unit =
     let name = mangle_cstor name in
 
     let pp_field out (f : A.Field.t) =
@@ -584,15 +583,15 @@ end = struct
     | [] -> assert false
     | [ A.Definition.{ name; view = Const { ty; value }; _ } ] ->
       cg_const self name ty value
-    | [ A.Definition.{ name; view = TypeDef { ty } } ] ->
+    | [ A.Definition.{ name; view = TypeDef { ty }; _ } ] ->
       cg_typedef ~pp self name ty
-    | [ A.Definition.{ name; view = Enum { cases } } ] ->
+    | [ A.Definition.{ name; view = Enum { cases }; _ } ] ->
       cg_enum ~pp self name cases
-    | [ A.Definition.{ name; view = Exception { fields } } ] ->
-      cg_exception ~pp self name fields
+    | [ A.Definition.{ name; view = Exception { fields }; _ } ] ->
+      cg_exception self name fields
     | defs when List.for_all is_newtype defs ->
       cg_new_types ~pp self (List.map as_newtype_exn defs)
-    | [ A.Definition.{ name; view = Service { extends; funs } } ] ->
+    | [ A.Definition.{ name; view = Service { extends; funs }; _ } ] ->
       cg_service self name ~extends funs
     | defs ->
       failwith
@@ -600,7 +599,8 @@ end = struct
            (CCFormat.Dump.list A.Definition.pp)
            defs
 
-  let encode_header ~pp (h : A.Header.t) : unit = ()
+  (* TODO: what to do there? *)
+  let encode_header ~pp:_ (_h : A.Header.t) : unit = ()
 
   let encode_file (self : t) ~pp (file : A.File.t) : unit =
     let defs = Find_scc.top file in
