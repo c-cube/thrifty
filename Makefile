@@ -7,6 +7,7 @@ WATCH?=@all
 watch:
 	@dune build $(OPTS) $(WATCH) -w
 
+.PHONY: test
 test:
 	@dune runtest $(OPTS) --force --no-buffer
 
