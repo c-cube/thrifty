@@ -6,8 +6,10 @@ let tr_buf = Basic_transports.transport_of_buffer buf
 let proto_write = Binary_protocol.write (tr_buf :> transport_write)
 
 let () =
-  let ((module P) as p) = proto_write in
+  let (module P) = proto_write in
   P.write_msg_begin "hello" MSG_ONEWAY 42;
+  P.write_msg_end ();
+  P.write_struct_begin "S0";
   P.write_field_begin "x" T_I32 1;
   P.write_i32 17l;
   P.write_field_end ();
@@ -15,7 +17,8 @@ let () =
   P.write_string "hello";
   P.write_field_end ();
   P.write_field_stop ();
-  P.write_msg_end ()
+  P.write_struct_end ();
+  ()
 
 let data = Buffer.contents buf
 let () = Fmt.printf "encoded data (%d bytes): %S@." (String.length data) data
@@ -54,3 +57,18 @@ let () =
   P.read_msg_end ();
   Fmt.printf "got end of message@.";
   ()
+
+(* now use the debug protocol to read again *)
+
+let proto_read =
+  Binary_protocol.read (Basic_transports.transport_of_string data)
+
+let get_toks, prot_debug = Debug_protocol.debug_write ()
+
+let () =
+  Format.printf "transfer to debug protocol@.";
+  Transfer.transfer_message proto_read prot_debug;
+  Transfer.transfer_struct proto_read prot_debug;
+  Fmt.printf "tokens: %a@."
+    (Fmt.Dump.list Debug_protocol.Token.pp)
+    (get_toks ())

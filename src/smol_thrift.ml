@@ -5,6 +5,7 @@ module Basic_transports = Basic_transports
 module Debug_protocol = Debug_protocol
 module Binary_protocol = Binary_protocol
 module Service_multiplex = Service_multiplex
+module Transfer = Transfer
 open Types
 
 (** Encode to string using a protocol and encoder.
