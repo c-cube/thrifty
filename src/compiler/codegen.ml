@@ -184,6 +184,26 @@ end = struct
       | T_SET -> "T_SET"
       | T_LIST -> "T_LIST")
 
+  let cg_read_field_ty_of_ty (ty : A.Type.t) =
+    match ty.view with
+    | A.Type.Named _ -> "T_STRUCT"
+    | A.Type.List _ -> "T_LIST"
+    | A.Type.Set _ -> "T_SET"
+    | A.Type.Map _ -> "T_MAP"
+    | A.Type.Base b ->
+      (match b with
+      | T_BOOL -> "T_BOOL"
+      | T_BYTE | T_I8 -> "(T_BYTE | T_I8)"
+      | T_I16 -> "T_I16"
+      | T_I32 -> "T_I32"
+      | T_I64 -> "T_I64"
+      | T_DOUBLE -> "T_DOUBLE"
+      | T_STRING | T_BINARY -> "(T_STRING | T_BINARY)"
+      | T_STRUCT -> "T_STRUCT"
+      | T_MAP -> "T_MAP"
+      | T_SET -> "T_SET"
+      | T_LIST -> "T_LIST")
+
   (** Generate a serializer for [(module OP) (name:ty)] *)
   let rec cg_write_for_ty out ((name, ty) : string * A.Type.t) : unit =
     match ty.view with
@@ -225,6 +245,45 @@ end = struct
       in
       fpf out "OP.%s %s" m name
 
+  (** Generate a deserializer for [(module IP) (name:ty)] *)
+  let rec cg_read_for_ty out (ty : A.Type.t) : unit =
+    match ty.view with
+    | Named s -> fpf out "read_%s (module IP) " (mangle_name s)
+    | List ty ->
+      let fty = cg_read_field_ty_of_ty ty in
+      fpf out "(@[let _ty, len = IP.read_list_begin () in@ ";
+      fpf out "assert (match _ty with %s -> true | _ -> false);@ " fty;
+      fpf out "@[<2>let l = List.init len@ (@[<hv>fun _i ->@ %a@])@] in@ "
+        cg_read_for_ty ty;
+      fpf out "IP.read_list_end();@ ";
+      fpf out "l@])"
+    | Set ty ->
+      let fty = cg_read_field_ty_of_ty ty in
+      fpf out "(@[let _ty, len = IP.read_set_begin () in@ ";
+      fpf out "assert (match _ty with %s -> true | _ -> false);@ " fty;
+      fpf out "@[<2>let l = List.init len@ (@[<hv>fun _i ->@ %a@])@] in@ "
+        cg_read_for_ty ty;
+      fpf out "IP.read_set_end();@ ";
+      fpf out "l@])"
+    | Map (ty1, ty2) -> fpf out "assert false" (* TODO *)
+    | Base b ->
+      let m =
+        match b with
+        | T_BOOL -> "read_bool"
+        | T_BYTE -> "read_byte"
+        | T_I8 -> "read_i8"
+        | T_I16 -> "read_i16"
+        | T_I32 -> "read_i32"
+        | T_I64 -> "read_i64"
+        | T_DOUBLE -> "read_double"
+        | T_STRING -> "read_string"
+        | T_BINARY -> "read_binary"
+        | T_STRUCT | T_MAP | T_SET | T_LIST ->
+          failwith
+          @@ Format.asprintf "bad base type %s" (string_of_field_type b)
+      in
+      fpf out "IP.%s ()" m
+
   let cg_write_field out ((name, field_id, f) : string * int * A.Field.t) : unit
       =
     let fty = cg_write_field_ty_of_ty f.ty in
@@ -239,6 +298,22 @@ end = struct
          OP.write_field_begin %S %s %d;@ %a;@ OP.write_field_end()@]@])"
         (mangle_name f.name) f.name fty field_id cg_write_for_ty ("x", f.ty)
 
+  (* TODO
+     let cg_read_field out ((name, field_id, f) : string * int * A.Field.t) : unit
+         =
+       let fty = cg_read_field_ty_of_ty f.ty in
+       if A.Field.is_required f then
+         fpf out
+           "@[<v2>begin@ OP.write_field_begin %S %s %d;@ %a;@ \
+            OP.write_field_end();@;\
+            <1 -2>end@]" f.name fty field_id cg_read_for_ty (name, f.ty)
+       else
+         fpf out
+           "(@[<v>match %s with@ | None -> ()@ | @[<v>Some x ->@ \
+            OP.write_field_begin %S %s %d;@ %a;@ OP.write_field_end()@]@])"
+           (mangle_name f.name) f.name fty field_id cg_read_for_ty ("x", f.ty)
+  *)
+
   (* generate code to write fields into a [protocol_write].
      Each field is assumed to be in a variable of the same name,
      the protocol in module [OP] (output protocol) *)
@@ -252,12 +327,44 @@ end = struct
     List.iteri write_field fs;
     fpf out "@;<1 -2>end@]"
 
+  (* read fields from [(module IP)], each field into a variable of the same
+     name as the field. Optional/default fields will be of option type. *)
+  let cg_read_fields out (fs : (int * A.Field.t) list) : unit =
+    let gen_var ((_, f) : _ * A.Field.t) : unit =
+      fpf out "let %s = ref %t in@ " (mangle_name f.name) (fun out ->
+          match f.default with
+          | None -> fpf out "None"
+          | Some v ->
+            fpf out "(@[Some (%a)@])" (pp_const_value ~ty:(Some f.ty)) v)
+    and read_field ((field_id, f) : int * A.Field.t) =
+      let ty_pat = cg_read_field_ty_of_ty f.ty in
+      fpf out "| (%S, %s, _) | (_, %s, %d) ->@ " f.name ty_pat ty_pat field_id;
+      fpf out "  @[<2>%s :=@ Some(@[%a@])@];@ " (mangle_name f.name)
+        cg_read_for_ty f.ty;
+      fpf out "| (%S, _, _) | (_, _, %d) ->@ " f.name field_id;
+      fpf out "  failwith {|invalid type for field (%d: %S)|}@ " field_id f.name
+    in
+    (* make a loop *)
+    fpf out "let continue = ref true in@ ";
+    List.iter gen_var fs;
+    fpf out "@[<v2>while !continue do@ ";
+    fpf out "match IP.read_field_begin () with@ ";
+    fpf out
+      "@[| exception Smol_thrift.Types.Read_stop_field -> continue := false@]@ ";
+    List.iter read_field fs;
+    fpf out "| _ -> () (* unknown field *)";
+    fpf out "@;<1 -2>done@];@ ";
+    ()
+
   let cg_typedef ~pp (self : t) name ty : unit =
     let name = mangle_name name in
     fpf self.out {|@.@[<2>type %s = %a@]@.|} name pp_ty ty;
     fpf self.out
-      {|@.@[<v2>let write_%s (module OP:PROTOCOL_WRITE) (self:%s) =@ %a@]@.|}
+      {|@.@[<v2>let write_%s (module OP:PROTOCOL_WRITE) (self:%s) : unit =@ %a@]@.|}
       name name cg_write_for_ty ("self", ty);
+    fpf self.out
+      {|@.@[<v2>let read_%s (module IP:PROTOCOL_READ) : %s =@ %a@]@.|} name name
+      cg_read_for_ty ty;
     if pp then
       fpf self.out {|@.@[<2>let pp_%s out (self:%s) =@ %a@]@.|} name name
         cg_printer_for_ty ty
@@ -288,13 +395,13 @@ end = struct
 
     (* pp *)
     if pp then (
-      fpf self.out {|@.@[<v2>let pp_%s out self = match self with|} name;
+      fpf self.out {|@.@[<v2>let pp_%s out self =@ |} name;
+      fpf self.out "@[<hv2>let s = match self with";
       List.iter
         (fun (c, _) ->
-          fpf self.out {|@ | %s -> Format.fprintf out %S|} (mangle_cstor c)
-            (mangle_cstor c))
+          fpf self.out {|@ | %s -> %S|} (mangle_cstor c) (mangle_cstor c))
         cases;
-      fpf self.out {|@.|}
+      fpf self.out " in@]@ Format.fprintf out {|%%s|} s@."
     );
 
     (* to_int *)
@@ -321,7 +428,13 @@ end = struct
     fpf self.out {|OP.write_i16 (int_of_%s self)|} name;
     fpf self.out {|@.|};
 
-    (* TODO: write *)
+    (* read *)
+    fpf self.out "@.(** Deserialize a %S *)@." name;
+    fpf self.out {|@[<v2>let read_%s (module IP:PROTOCOL_READ) : %s =@ |} name
+      name;
+    fpf self.out {|IP.read_i16 () |> %s_of_int|} name;
+    fpf self.out {|@.|};
+
     ()
 
   let cg_exception (self : t) name (fields : A.Field.t list) : unit =
@@ -347,32 +460,41 @@ end = struct
     fpf self.out {|@]@.|};
 
     (* TODO: write *)
+    (* TODO: read *)
     ()
+
+  (* pair fields with their field_id *)
+  let pair_with_field_id (fs : A.Field.t list) : (field_id * _) list =
+    let cur_field = ref 1 in
+    List.map
+      (fun (f : A.Field.t) ->
+        (* unique number for this field *)
+        let f_id =
+          match f.id with
+          | None ->
+            let n = !cur_field in
+            incr cur_field;
+            n
+          | Some i ->
+            cur_field := max !cur_field (i + 1);
+            i
+        in
+        f_id, f)
+      fs
+
+  let cg_read_extract_var_of_field out ((_fid, f) : int * A.Field.t) =
+    let fname = mangle_name f.name in
+    if A.Field.is_required f then (
+      fpf out "@[<hv2>let %s = match !%s with@ " fname fname;
+      fpf out "| None -> failwith {|field (%d: %S) is required|}@ " _fid f.name;
+      fpf out "| Some x -> x@] in@ "
+    ) else
+      fpf out "let %s = !%s in@ " fname fname
 
   (** Define (mutually recursive) types *)
   let cg_new_types ~pp (self : t) (defs : (_ * _ * Ast.Field.t list) list) :
       unit =
     let defs = List.map (fun (n, k, fs) -> mangle_name n, k, fs) defs in
-
-    (* pair fields with their field_id *)
-    let pair_with_field_id (fs : A.Field.t list) : (field_id * _) list =
-      let cur_field = ref 1 in
-      List.map
-        (fun (f : A.Field.t) ->
-          (* unique number for this field *)
-          let f_id =
-            match f.id with
-            | None ->
-              let n = !cur_field in
-              incr cur_field;
-              n
-            | Some i ->
-              cur_field := max !cur_field (i + 1);
-              i
-          in
-          f_id, f)
-        fs
-    in
 
     let cg_def_field out (f : A.Field.t) =
       fpf out "%s: %a%s" (mangle_name f.name) pp_ty f.ty
@@ -447,10 +569,12 @@ end = struct
       let fields_with_id = pair_with_field_id fields in
 
       if first then
-        fpf out "let rec write_%s (module OP:PROTOCOL_WRITE) (self:%s) =@ " name
-          name
+        fpf out
+          "let rec write_%s (module OP:PROTOCOL_WRITE) (self:%s) : unit =@ "
+          name name
       else
-        fpf out "pp_%s (module OP:PROTOCOL_WRITE) (self:%s) =@ " name name;
+        fpf out "write_%s (module OP:PROTOCOL_WRITE) (self:%s) : unit =@ " name
+          name;
       match k with
       | `Struct ->
         fpf out "let {%s} = self in@ "
@@ -489,6 +613,57 @@ end = struct
     fpf self.out "@.(** Serialize *)@.";
     fpf self.out {|@[<v>@[<v2>%a@]@]@.|} (pp_l_and cg_writer) defs;
 
+    (* reader *)
+    let cg_reader ~first out (name, k, fields) =
+      let fields_with_id = pair_with_field_id fields in
+
+      if first then
+        fpf out "let rec read_%s (module IP:PROTOCOL_READ) : %s =@ " name name
+      else
+        fpf out "read_%s (module IP:PROTOCOL_READ) : %s =@ " name name;
+      match k with
+      | `Struct ->
+        fpf out "let _name = IP.read_struct_begin () in@ ";
+        cg_read_fields out fields_with_id;
+        fpf out "IP.read_struct_end ();@ ";
+        List.iter (cg_read_extract_var_of_field out) fields_with_id;
+
+        fpf out "{%s}"
+          (String.concat ";"
+          @@ List.map (fun f -> mangle_name f.A.Field.name) fields)
+      | `Union ->
+        fpf out "let _name = IP.read_struct_begin () in@ ";
+        cg_read_fields out fields_with_id;
+        fpf out "IP.read_struct_end ();@ ";
+        fpf out "(* check which field is set *)@ ";
+        fpf out "(@[<v>match %s with@ "
+          (String.concat ", "
+          @@ List.map
+               (fun f -> Printf.sprintf "!%s" (mangle_name @@ A.Field.name f))
+               fields);
+
+        List.iteri
+          (fun i (f : A.Field.t) ->
+            let cname = mangle_cstor f.name in
+            (* print pattern *)
+            fpf out "| ";
+            for j = 0 to List.length fields - 1 do
+              if j > 0 then fpf out ",";
+              if i = j then
+                fpf out "Some x"
+              else
+                fpf out "_"
+            done;
+            fpf out " -> %s x@ " cname)
+          fields;
+
+        fpf out "| _ -> failwith {|no field set for %S|}@ " name;
+        fpf out "@])"
+    in
+
+    fpf self.out "@.(** Deserialize *)@.";
+    fpf self.out {|@[<v>@[<v2>%a@]@]@.|} (pp_l_and cg_reader) defs;
+
     ()
 
   let cg_service (self : t) name ~extends funs : unit =
@@ -516,7 +691,7 @@ end = struct
         in
         fpf out "%s%s:%a" lbl arg.name pp_ty arg.ty
       in
-      fpf self.out "@   method virtual %s : %a -> unit -> %a@ " f_name
+      fpf self.out "@   @[method virtual %s :@ @[%a -> unit -> %a@]@]@ " f_name
         (pp_l ~sep:"->" pp_arg) f.args pp_fun_ty f.ty
     in
 
@@ -527,10 +702,22 @@ end = struct
     fpf self.out
       "  @[<v2>method process (ip:protocol_read) (op:protocol_write) : unit =@ ";
     fpf self.out "let (module IP) = ip in@ ";
+    fpf self.out "let (module OP) = op in@ ";
     fpf self.out "let msg_name, msg_ty, seq_num = IP.read_msg_begin () in@ ";
     fpf self.out "IP.read_msg_end();@ ";
     fpf self.out "match msg_name, msg_ty with@ ";
+
+    (* emit code to read struct making up arguments, binding them
+       into references as we go;
+       then emit [match self#<the method name> ?a1:!a1 ~a2:!a2 () with
+         | ret -> write_msg_out; …
+         | exception E1 (* thrown *) -> write_msg_out …
+         | exception E2 (* thrown *) -> write_msg_out …
+         | exception exn -> failwith "unhandled exception …"
+       ]
+    *)
     let emit_fun_case (f : A.Function.t) =
+      let fields_with_id = pair_with_field_id f.args in
       let m_ty =
         if f.oneway then (
           (match f.ty with
@@ -544,17 +731,48 @@ end = struct
         ) else
           "MSG_CALL"
       in
-      fpf self.out "| @[%S, %s ->@ " f.name m_ty;
-      fpf self.out "assert false (* TODO *)@]@ "
-      (* TODO: emit code to read struct making up arguments, binding them
-         into references as we go;
-         then emit [match self#<the method name> ?a1:!a1 ~a2:!a2 () with
-           | ret -> write_msg_out; …
-           | exception E1 (* thrown *) -> write_msg_out …
-           | exception E2 (* thrown *) -> write_msg_out …
-           | exception exn -> failwith "unhandled exception …"
-         ]
-      *)
+      fpf self.out "| @[<v>%S, %s ->@ " f.name m_ty;
+      fpf self.out "(* read arguments *)@ ";
+      fpf self.out "let _name = IP.read_struct_begin () in@ ";
+      cg_read_fields self.out fields_with_id;
+      fpf self.out "IP.read_struct_end();@ ";
+      List.iter (cg_read_extract_var_of_field self.out) fields_with_id;
+      (* call method *)
+      let args =
+        String.concat " "
+        @@ List.map
+             (fun (f : A.Field.t) ->
+               let pre =
+                 if A.Field.is_required f then
+                   "~"
+                 else
+                   "?"
+               in
+               spf "%s%s" pre (mangle_name f.name))
+             f.args
+      in
+      if f.oneway then (
+        (* just call method *)
+        fpf self.out "(try self#%s %s () with _ -> ());" (mangle_name f.name)
+          args;
+        fpf self.out "@]@ "
+      ) else (
+        (* call method, get result, send it back (or send back exception) *)
+        fpf self.out "(@[<v>match self#%s %s () with" (mangle_name f.name) args;
+        fpf self.out "@ | @[<v>res ->@ ";
+        (* send back result/exception *)
+        fpf self.out "OP.write_struct_begin {|success|};@ ";
+        (* write field, if we return anything *)
+        (match f.ty with
+        | A.Function_type.Void -> ()
+        | A.Function_type.Ty ret ->
+          cg_write_field self.out ("res", 0, A.Field.field_rpc_success ret);
+          fpf self.out ";@ ");
+        fpf self.out "OP.write_field_stop();@ ";
+        fpf self.out "OP.write_struct_end ()@]@ ";
+        (* TODO: handle each case in Throws *)
+        fpf self.out "@])@]@ "
+      )
     in
     List.iter emit_fun_case funs;
     fpf self.out

@@ -94,6 +94,36 @@ module Field = struct
     in
     fpf out "@[%a%s: %s %a%a;@]" pp_id f.id f.name (string_of_req f.req) Type.pp
       f.ty pp_default f.default
+
+  (** Field used to return values from RPC functions *)
+  let field_rpc_success (ty : Type.t) : t =
+    { id = Some 0; req = Required; name = "success"; ty; default = None }
+
+  (* exception message:
+     [{
+       exception TApplicationException {
+       1: string message,
+       2: i32 type
+     }]]
+  *)
+
+  let field_rpc_exn_msg : t =
+    {
+      id = Some 1;
+      req = Required;
+      name = "message";
+      ty = Type.{ view = Base T_STRING; meta = [] };
+      default = None;
+    }
+
+  let field_rpc_exn_type : t =
+    {
+      id = Some 2;
+      req = Required;
+      name = "type";
+      ty = Type.{ view = Base T_I32; meta = [] };
+      default = None;
+    }
 end
 
 module Function_type = struct
