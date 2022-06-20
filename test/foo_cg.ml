@@ -46,7 +46,7 @@ let rec write_foo (module OP:PROTOCOL_WRITE) (self:foo) : unit =
        OP.write_field_end());
     begin
       OP.write_field_begin "z" T_BOOL 3;
-      OP.write_bool self.z;
+      OP.write_bool z;
       OP.write_field_end();
     end
   end;
@@ -65,22 +65,27 @@ let rec read_foo (module IP:PROTOCOL_READ) : foo =
     | ("x", T_I32, _) | (_, T_I32, 1) ->
       x := Some(IP.read_i32 ());
     | ("x", _, _) | (_, _, 1) ->
-      failwith {|invalid type for field (1: "x")|}
+      raise (Runtime_error
+        (UE_invalid_protocol, {|invalid type for field (1: "x")|}))
     | ("y", (T_STRING | T_BINARY), _) | (_, (T_STRING | T_BINARY), 2) ->
       y := Some(IP.read_string ());
     | ("y", _, _) | (_, _, 2) ->
-      failwith {|invalid type for field (2: "y")|}
+      raise (Runtime_error
+        (UE_invalid_protocol, {|invalid type for field (2: "y")|}))
     | ("z", T_BOOL, _) | (_, T_BOOL, 3) ->
       z := Some(IP.read_bool ());
     | ("z", _, _) | (_, _, 3) ->
-      failwith {|invalid type for field (3: "z")|}
+      raise (Runtime_error
+        (UE_invalid_protocol, {|invalid type for field (3: "z")|}))
     | _ -> () (* unknown field *)
   done;
   IP.read_struct_end ();
   let x = !x in
   let y = !y in
   let z = match !z with
-    | None -> failwith {|field (3: "z") is required|}
+    | None ->
+      raise (Runtime_error (UE_invalid_protocol,
+               {|field (3: "z") is required|}))
     | Some x -> x in
   {x;y;z}
 
@@ -104,12 +109,12 @@ let rec write_loc (module OP:PROTOCOL_WRITE) (self:loc) : unit =
   begin
     begin
       OP.write_field_begin "long" T_DOUBLE 1;
-      OP.write_double self.long;
+      OP.write_double long;
       OP.write_field_end();
     end;
     begin
       OP.write_field_begin "lat" T_DOUBLE 2;
-      OP.write_double self.lat;
+      OP.write_double lat;
       OP.write_field_end();
     end
   end;
@@ -127,31 +132,37 @@ let rec read_loc (module IP:PROTOCOL_READ) : loc =
     | ("long", T_DOUBLE, _) | (_, T_DOUBLE, 1) ->
       long := Some(IP.read_double ());
     | ("long", _, _) | (_, _, 1) ->
-      failwith {|invalid type for field (1: "long")|}
+      raise (Runtime_error
+        (UE_invalid_protocol, {|invalid type for field (1: "long")|}))
     | ("lat", T_DOUBLE, _) | (_, T_DOUBLE, 2) ->
       lat := Some(IP.read_double ());
     | ("lat", _, _) | (_, _, 2) ->
-      failwith {|invalid type for field (2: "lat")|}
+      raise (Runtime_error
+        (UE_invalid_protocol, {|invalid type for field (2: "lat")|}))
     | _ -> () (* unknown field *)
   done;
   IP.read_struct_end ();
   let long = match !long with
-    | None -> failwith {|field (1: "long") is required|}
+    | None ->
+      raise (Runtime_error (UE_invalid_protocol,
+               {|field (1: "long") is required|}))
     | Some x -> x in
   let lat = match !lat with
-    | None -> failwith {|field (2: "lat") is required|}
+    | None ->
+      raise (Runtime_error (UE_invalid_protocol,
+               {|field (2: "lat") is required|}))
     | Some x -> x in
   {long;lat}
 
 exception Ohno
 
 exception Ohno2 of {
-  really_bad: bool
+  really_bad: bool option
 }
 
 exception Ohno3 of {
-  why: string;
-  where: loc
+  why: string option;
+  where: loc option
 }
 
 type fooK =
@@ -169,7 +180,7 @@ let fooK_of_int = function
   | 1 -> K1
   | 4 -> K2
   | 5 -> K3
-  | n -> failwith (Printf.sprintf "unknown enum member %d for `fooK`" n)
+  | n -> raise (Runtime_error (UE_invalid_protocol, Printf.sprintf "unknown enum member %d for `fooK`" n))
 
 (** Serialize a "fooK" *)
 let write_fooK (module OP:PROTOCOL_WRITE) (self:fooK) =
@@ -242,11 +253,13 @@ let rec read_bar (module IP:PROTOCOL_READ) : bar =
                   IP.read_list_end(); l)) in
               IP.read_list_end(); l));
     | ("foos", _, _) | (_, _, 1) ->
-      failwith {|invalid type for field (1: "foos")|}
+      raise (Runtime_error
+        (UE_invalid_protocol, {|invalid type for field (1: "foos")|}))
     | ("kind", T_STRUCT, _) | (_, T_STRUCT, 2) ->
       kind := Some(read_fooK (module IP) );
     | ("kind", _, _) | (_, _, 2) ->
-      failwith {|invalid type for field (2: "kind")|}
+      raise (Runtime_error
+        (UE_invalid_protocol, {|invalid type for field (2: "kind")|}))
     | _ -> () (* unknown field *)
   done;
   IP.read_struct_end ();
@@ -302,15 +315,18 @@ let rec read_fooOrBarOrBool (module IP:PROTOCOL_READ) : fooOrBarOrBool =
     | ("foo", T_STRUCT, _) | (_, T_STRUCT, 1) ->
       foo := Some(read_foo (module IP) );
     | ("foo", _, _) | (_, _, 1) ->
-      failwith {|invalid type for field (1: "foo")|}
+      raise (Runtime_error
+        (UE_invalid_protocol, {|invalid type for field (1: "foo")|}))
     | ("bar", T_STRUCT, _) | (_, T_STRUCT, 2) ->
       bar := Some(read_bar (module IP) );
     | ("bar", _, _) | (_, _, 2) ->
-      failwith {|invalid type for field (2: "bar")|}
+      raise (Runtime_error
+        (UE_invalid_protocol, {|invalid type for field (2: "bar")|}))
     | ("b", T_BOOL, _) | (_, T_BOOL, 3) ->
       b := Some(IP.read_bool ());
     | ("b", _, _) | (_, _, 3) ->
-      failwith {|invalid type for field (3: "b")|}
+      raise (Runtime_error
+        (UE_invalid_protocol, {|invalid type for field (3: "b")|}))
     | _ -> () (* unknown field *)
   done;
   IP.read_struct_end ();
@@ -319,7 +335,7 @@ let rec read_fooOrBarOrBool (module IP:PROTOCOL_READ) : fooOrBarOrBool =
    | Some x,_,_ -> Foo x
    | _,Some x,_ -> Bar x
    | _,_,Some x -> B x
-   | _ -> failwith {|no field set for "fooOrBarOrBool"|}
+   | _ -> raise (Runtime_error (UE_protocol_error, Printf.sprintf {|no field set for "fooOrBarOrBool"|}))
    )
 
 type bar2 = (bar) list
@@ -354,6 +370,25 @@ class virtual server_giveKind = object (self)
     let (module OP) = op in
     let msg_name, msg_ty, seq_num = IP.read_msg_begin () in
     IP.read_msg_end();
+    (* reply using a runtime failure *)
+    let reply_exn_ (ue:unexpected_exception) (msg:string) : unit =
+      OP.write_msg_begin {||} MSG_EXCEPTION seq_num;
+      OP.write_msg_end ();
+      let ty = Smol_thrift.Types.int_of_unexpected_exception ue in
+      begin
+        begin
+          OP.write_field_begin "type" T_I32 0;
+          OP.write_i32 ty;
+          OP.write_field_end();
+        end;
+        begin
+          OP.write_field_begin "message" T_STRING 1;
+          OP.write_string msg;
+          OP.write_field_end();
+        end
+      end
+    in
+    try (
     match msg_name, msg_ty with
     | "get_kind", MSG_CALL ->
       (* read arguments *)
@@ -366,14 +401,18 @@ class virtual server_giveKind = object (self)
         | ("foo", T_STRUCT, _) | (_, T_STRUCT, 1) ->
           foo := Some(read_foo (module IP) );
         | ("foo", _, _) | (_, _, 1) ->
-          failwith {|invalid type for field (1: "foo")|}
+          raise (Runtime_error
+            (UE_invalid_protocol, {|invalid type for field (1: "foo")|}))
         | _ -> () (* unknown field *)
       done;
       IP.read_struct_end();
       let foo = !foo in
+      (* call the user code *)
       (match self#get_kind ?foo () with
        | res ->
-         OP.write_struct_begin {|success|};
+         OP.write_msg_begin {||} MSG_REPLY seq_num;
+         OP.write_msg_end();
+         OP.write_struct_begin {||};
          begin
            OP.write_field_begin "success" T_STRUCT 0;
            write_fooK (module OP) res;
@@ -381,6 +420,8 @@ class virtual server_giveKind = object (self)
          end;
          OP.write_field_stop();
          OP.write_struct_end ()
+       | exception exn ->
+         raise (Runtime_error (UE_internal_error, (Printexc.to_string exn)))
        )
     | "send_bar", MSG_CALL ->
       (* read arguments *)
@@ -393,16 +434,48 @@ class virtual server_giveKind = object (self)
         | ("bar", T_STRUCT, _) | (_, T_STRUCT, 1) ->
           bar := Some(read_bar (module IP) );
         | ("bar", _, _) | (_, _, 1) ->
-          failwith {|invalid type for field (1: "bar")|}
+          raise (Runtime_error
+            (UE_invalid_protocol, {|invalid type for field (1: "bar")|}))
         | _ -> () (* unknown field *)
       done;
       IP.read_struct_end();
       let bar = !bar in
+      (* call the user code *)
       (match self#send_bar ?bar () with
        | res ->
-         OP.write_struct_begin {|success|};
+         OP.write_msg_begin {||} MSG_REPLY seq_num;
+         OP.write_msg_end();
+         OP.write_struct_begin {||};
          OP.write_field_stop();
          OP.write_struct_end ()
+       | exception Ohno ->
+         OP.write_msg_begin {||} MSG_REPLY seq_num;
+         OP.write_msg_end();
+         OP.write_struct_begin {||};
+         OP.write_field_begin {|o|} T_STRUCT 2;
+         OP.write_field_stop();
+         OP.write_field_end();
+         OP.write_field_stop();
+         OP.write_struct_end ()
+       | exception (Ohno2 {really_bad}) ->
+         OP.write_msg_begin {||} MSG_REPLY seq_num;
+         OP.write_msg_end();
+         OP.write_struct_begin {||};
+         OP.write_field_begin {|o2|} T_STRUCT 3;
+         begin
+           (match really_bad with
+            | None -> ()
+            | Some x ->
+              OP.write_field_begin "really_bad" T_BOOL 1;
+              OP.write_bool x;
+              OP.write_field_end())
+         end;
+         OP.write_field_stop();
+         OP.write_field_end();
+         OP.write_field_stop();
+         OP.write_struct_end ()
+       | exception exn ->
+         raise (Runtime_error (UE_internal_error, (Printexc.to_string exn)))
        )
     | "send_whatev", MSG_ONEWAY ->
       (* read arguments *)
@@ -416,20 +489,163 @@ class virtual server_giveKind = object (self)
         | ("how_many", T_I32, _) | (_, T_I32, 1) ->
           how_many := Some(IP.read_i32 ());
         | ("how_many", _, _) | (_, _, 1) ->
-          failwith {|invalid type for field (1: "how_many")|}
+          raise (Runtime_error
+            (UE_invalid_protocol, {|invalid type for field (1: "how_many")|}))
         | ("k", T_STRUCT, _) | (_, T_STRUCT, 3) ->
           k := Some(read_fooK (module IP) );
         | ("k", _, _) | (_, _, 3) ->
-          failwith {|invalid type for field (3: "k")|}
+          raise (Runtime_error
+            (UE_invalid_protocol, {|invalid type for field (3: "k")|}))
         | _ -> () (* unknown field *)
       done;
       IP.read_struct_end();
       let how_many = match !how_many with
-        | None -> failwith {|field (1: "how_many") is required|}
+        | None ->
+          raise (Runtime_error (UE_invalid_protocol,
+                   {|field (1: "how_many") is required|}))
         | Some x -> x in
       let k = !k in
       (try self#send_whatev ~how_many ?k () with _ -> ());
-    | _n, _ -> failwith (Printf.sprintf {|invalid message %S|} _n)
+    | _n, _ -> raise (Runtime_error (UE_invalid_message_type, {|invalid message|}));
+    ) with Runtime_error (ue, msg) ->
+      (* catch runtime errors and reify them *)
+      reply_exn_ ue msg;
+end
 
+(** Server-side for service "calculator" *)
+class virtual server_calculator = object (self)
+  inherit service_any
+  method name = "calculator"
+
+  method virtual add : x:int32-> y:int32 -> unit -> int32
+
+  method virtual mult : x:int32-> y:int32 -> unit -> int32
+
+  (** Process an incoming message *)
+  method process (ip:protocol_read) (op:protocol_write) : unit =
+    let (module IP) = ip in
+    let (module OP) = op in
+    let msg_name, msg_ty, seq_num = IP.read_msg_begin () in
+    IP.read_msg_end();
+    (* reply using a runtime failure *)
+    let reply_exn_ (ue:unexpected_exception) (msg:string) : unit =
+      OP.write_msg_begin {||} MSG_EXCEPTION seq_num;
+      OP.write_msg_end ();
+      let ty = Smol_thrift.Types.int_of_unexpected_exception ue in
+      begin
+        begin
+          OP.write_field_begin "type" T_I32 0;
+          OP.write_i32 ty;
+          OP.write_field_end();
+        end;
+        begin
+          OP.write_field_begin "message" T_STRING 1;
+          OP.write_string msg;
+          OP.write_field_end();
+        end
+      end
+    in
+    try (
+    match msg_name, msg_ty with
+    | "add", MSG_CALL ->
+      (* read arguments *)
+      let _name = IP.read_struct_begin () in
+      let continue = ref true in
+      let x = ref None in
+      let y = ref None in
+      while !continue do
+        match IP.read_field_begin () with
+        | exception Smol_thrift.Types.Read_stop_field -> continue := false
+        | ("x", T_I32, _) | (_, T_I32, 1) ->
+          x := Some(IP.read_i32 ());
+        | ("x", _, _) | (_, _, 1) ->
+          raise (Runtime_error
+            (UE_invalid_protocol, {|invalid type for field (1: "x")|}))
+        | ("y", T_I32, _) | (_, T_I32, 2) ->
+          y := Some(IP.read_i32 ());
+        | ("y", _, _) | (_, _, 2) ->
+          raise (Runtime_error
+            (UE_invalid_protocol, {|invalid type for field (2: "y")|}))
+        | _ -> () (* unknown field *)
+      done;
+      IP.read_struct_end();
+      let x = match !x with
+        | None ->
+          raise (Runtime_error (UE_invalid_protocol,
+                   {|field (1: "x") is required|}))
+        | Some x -> x in
+      let y = match !y with
+        | None ->
+          raise (Runtime_error (UE_invalid_protocol,
+                   {|field (2: "y") is required|}))
+        | Some x -> x in
+      (* call the user code *)
+      (match self#add ~x ~y () with
+       | res ->
+         OP.write_msg_begin {||} MSG_REPLY seq_num;
+         OP.write_msg_end();
+         OP.write_struct_begin {||};
+         begin
+           OP.write_field_begin "success" T_I32 0;
+           OP.write_i32 res;
+           OP.write_field_end();
+         end;
+         OP.write_field_stop();
+         OP.write_struct_end ()
+       | exception exn ->
+         raise (Runtime_error (UE_internal_error, (Printexc.to_string exn)))
+       )
+    | "mult", MSG_CALL ->
+      (* read arguments *)
+      let _name = IP.read_struct_begin () in
+      let continue = ref true in
+      let x = ref None in
+      let y = ref None in
+      while !continue do
+        match IP.read_field_begin () with
+        | exception Smol_thrift.Types.Read_stop_field -> continue := false
+        | ("x", T_I32, _) | (_, T_I32, 1) ->
+          x := Some(IP.read_i32 ());
+        | ("x", _, _) | (_, _, 1) ->
+          raise (Runtime_error
+            (UE_invalid_protocol, {|invalid type for field (1: "x")|}))
+        | ("y", T_I32, _) | (_, T_I32, 2) ->
+          y := Some(IP.read_i32 ());
+        | ("y", _, _) | (_, _, 2) ->
+          raise (Runtime_error
+            (UE_invalid_protocol, {|invalid type for field (2: "y")|}))
+        | _ -> () (* unknown field *)
+      done;
+      IP.read_struct_end();
+      let x = match !x with
+        | None ->
+          raise (Runtime_error (UE_invalid_protocol,
+                   {|field (1: "x") is required|}))
+        | Some x -> x in
+      let y = match !y with
+        | None ->
+          raise (Runtime_error (UE_invalid_protocol,
+                   {|field (2: "y") is required|}))
+        | Some x -> x in
+      (* call the user code *)
+      (match self#mult ~x ~y () with
+       | res ->
+         OP.write_msg_begin {||} MSG_REPLY seq_num;
+         OP.write_msg_end();
+         OP.write_struct_begin {||};
+         begin
+           OP.write_field_begin "success" T_I32 0;
+           OP.write_i32 res;
+           OP.write_field_end();
+         end;
+         OP.write_field_stop();
+         OP.write_struct_end ()
+       | exception exn ->
+         raise (Runtime_error (UE_internal_error, (Printexc.to_string exn)))
+       )
+    | _n, _ -> raise (Runtime_error (UE_invalid_message_type, {|invalid message|}));
+    ) with Runtime_error (ue, msg) ->
+      (* catch runtime errors and reify them *)
+      reply_exn_ ue msg;
 end
 

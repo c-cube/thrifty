@@ -48,3 +48,9 @@ service GiveKind {
 
   oneway void send_whatev(1: required i32 how_many, 3: FooK k);
 }
+
+service Calculator {
+  i32 add(1: required i32 x, 2: required i32 y);
+
+  i32 mult(1: required i32 x, 2: required i32 y);
+}

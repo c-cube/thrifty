@@ -30,14 +30,19 @@ module CG : sig
   val write_code : out_channel -> t -> unit
 end = struct
   type fmt = Format.formatter
-  type t = { buf: Buffer.t; out: fmt }
+
+  type t = {
+    buf: Buffer.t;
+    out: fmt;
+    exns: (string, (int * A.Field.t) list) Hashtbl.t;
+  }
 
   let fpf (self : fmt) fmt = Format.fprintf self fmt
 
   let create () : t =
     let buf = Buffer.create 1024 in
     let out = Format.formatter_of_buffer buf in
-    { out; buf }
+    { out; buf; exns = Hashtbl.create 32 }
 
   let prelude file =
     spf
@@ -284,14 +289,15 @@ end = struct
       in
       fpf out "IP.%s ()" m
 
-  let cg_write_field out ((name, field_id, f) : string * int * A.Field.t) : unit
-      =
+  (* code to write a field, whose value is stored in variable [var_name] *)
+  let cg_write_field out ((var_name, field_id, f) : string * int * A.Field.t) :
+      unit =
     let fty = cg_write_field_ty_of_ty f.ty in
     if A.Field.is_required f then
       fpf out
         "@[<v2>begin@ OP.write_field_begin %S %s %d;@ %a;@ \
          OP.write_field_end();@;\
-         <1 -2>end@]" f.name fty field_id cg_write_for_ty (name, f.ty)
+         <1 -2>end@]" f.name fty field_id cg_write_for_ty (var_name, f.ty)
     else
       fpf out
         "(@[<v>match %s with@ | None -> ()@ | @[<v>Some x ->@ \
@@ -315,13 +321,13 @@ end = struct
   *)
 
   (* generate code to write fields into a [protocol_write].
-     Each field is assumed to be in a variable of the same name,
+     Each field is paired with its assigned field ID and the name
+     of the variable containing its value,
      the protocol in module [OP] (output protocol) *)
-  let cg_write_fields out (fs : (int * A.Field.t) list) : unit =
-    let write_field i ((field_id, f) : int * A.Field.t) =
+  let cg_write_fields out (fs : (int * A.Field.t * string) list) : unit =
+    let write_field i ((field_id, f, var_name) : int * A.Field.t * string) =
       if i > 0 then fpf out ";@ ";
-      let name = spf "self.%s" (mangle_name f.name) in
-      cg_write_field out (name, field_id, f)
+      cg_write_field out (var_name, field_id, f)
     in
     fpf out "@[<v2>begin@ ";
     List.iteri write_field fs;
@@ -342,7 +348,10 @@ end = struct
       fpf out "  @[<2>%s :=@ Some(@[%a@])@];@ " (mangle_name f.name)
         cg_read_for_ty f.ty;
       fpf out "| (%S, _, _) | (_, _, %d) ->@ " f.name field_id;
-      fpf out "  failwith {|invalid type for field (%d: %S)|}@ " field_id f.name
+      fpf out
+        "  @[<2>raise (Runtime_error@ (@[UE_invalid_protocol,@ {|invalid type \
+         for field (%d: %S)|}@]))@]@ "
+        field_id f.name
     in
     (* make a loop *)
     fpf out "let continue = ref true in@ ";
@@ -417,7 +426,7 @@ end = struct
       (fun (c, n) -> fpf self.out "@ | %d -> %s" n (mangle_cstor c))
       cases;
     fpf self.out
-      {|@ | n -> failwith (Printf.sprintf "unknown enum member %%d for `%s`" n)|}
+      {|@ | n -> raise (Runtime_error (UE_invalid_protocol, Printf.sprintf "unknown enum member %%d for `%s`" n))|}
       name;
     fpf self.out {|@.|};
 
@@ -435,32 +444,6 @@ end = struct
     fpf self.out {|IP.read_i16 () |> %s_of_int|} name;
     fpf self.out {|@.|};
 
-    ()
-
-  let cg_exception (self : t) name (fields : A.Field.t list) : unit =
-    let name = mangle_cstor name in
-
-    let pp_field out (f : A.Field.t) =
-      fpf out "%s: %a" (mangle_name f.name) pp_ty f.ty
-    in
-    let pp_fields out (fs : A.Field.t list) =
-      List.iteri
-        (fun i f ->
-          if i > 0 then fpf out ";@ ";
-          pp_field out f)
-        fs
-    in
-
-    (* type def *)
-    fpf self.out {|@.@[<v2>exception %s|} name;
-    if fields = [] then
-      ()
-    else
-      fpf self.out " of {@;%a@;<1 -2>}" pp_fields fields;
-    fpf self.out {|@]@.|};
-
-    (* TODO: write *)
-    (* TODO: read *)
     ()
 
   (* pair fields with their field_id *)
@@ -482,14 +465,53 @@ end = struct
         f_id, f)
       fs
 
+  (* read helper for a field: obtain a local variable named "foo" for
+     field "foo", of optional type; if field is required, extract the option
+     or else fail *)
   let cg_read_extract_var_of_field out ((_fid, f) : int * A.Field.t) =
     let fname = mangle_name f.name in
     if A.Field.is_required f then (
       fpf out "@[<hv2>let %s = match !%s with@ " fname fname;
-      fpf out "| None -> failwith {|field (%d: %S) is required|}@ " _fid f.name;
+      fpf out
+        "| @[None ->@ raise (@[<2>Runtime_error@ (UE_invalid_protocol,@ \
+         {|field (%d: %S) is required|})@])@]@ "
+        _fid f.name;
       fpf out "| Some x -> x@] in@ "
     ) else
       fpf out "let %s = !%s in@ " fname fname
+
+  let cg_exception (self : t) exn_name (fields : A.Field.t list) : unit =
+    let exn_name = mangle_cstor exn_name in
+
+    let fields_with_ids = pair_with_field_id fields in
+
+    let pp_field out (f : A.Field.t) =
+      fpf out "%s: %a" (mangle_name f.name) pp_ty f.ty;
+      if A.Field.is_required f then
+        ()
+      else
+        fpf out " option"
+    in
+    let pp_fields out (fs : A.Field.t list) =
+      List.iteri
+        (fun i f ->
+          if i > 0 then fpf out ";@ ";
+          pp_field out f)
+        fs
+    in
+
+    (* type def *)
+    fpf self.out {|@.@[<v2>exception %s|} exn_name;
+    if fields = [] then
+      ()
+    else
+      fpf self.out " of {@;%a@;<1 -2>}" pp_fields fields;
+    fpf self.out {|@]@.|};
+
+    (* remember the definition; reader/writer will be generated inline *)
+    Hashtbl.add self.exns exn_name fields_with_ids;
+
+    ()
 
   (** Define (mutually recursive) types *)
   let cg_new_types ~pp (self : t) (defs : (_ * _ * Ast.Field.t list) list) :
@@ -580,7 +602,10 @@ end = struct
         fpf out "let {%s} = self in@ "
           (String.concat "; " @@ List.map A.Field.name fields);
         fpf out "OP.write_struct_begin %S;@ " name;
-        fpf out "%a;@ " cg_write_fields fields_with_id;
+        fpf out "%a;@ " cg_write_fields
+          (List.map
+             (fun (id, f) -> id, f, mangle_name f.A.Field.name)
+             fields_with_id);
         fpf out "OP.write_struct_end ()"
       | `Union ->
         (* check all fields are required *)
@@ -657,7 +682,10 @@ end = struct
             fpf out " -> %s x@ " cname)
           fields;
 
-        fpf out "| _ -> failwith {|no field set for %S|}@ " name;
+        fpf out
+          "| _ -> raise (Runtime_error (UE_protocol_error, Printf.sprintf {|no \
+           field set for %S|}))@ "
+          name;
         fpf out "@])"
     in
 
@@ -701,10 +729,45 @@ end = struct
     fpf self.out "@   (** Process an incoming message *)@ ";
     fpf self.out
       "  @[<v2>method process (ip:protocol_read) (op:protocol_write) : unit =@ ";
+
     fpf self.out "let (module IP) = ip in@ ";
     fpf self.out "let (module OP) = op in@ ";
+
     fpf self.out "let msg_name, msg_ty, seq_num = IP.read_msg_begin () in@ ";
     fpf self.out "IP.read_msg_end();@ ";
+
+    (* local helper: reply with success *)
+    let cg_reply_success f =
+      fpf self.out "OP.write_msg_begin {||} MSG_REPLY seq_num;@ ";
+
+      fpf self.out "OP.write_msg_end();@ ";
+      fpf self.out "OP.write_struct_begin {||};@ ";
+      f ();
+      fpf self.out "OP.write_field_stop();@ ";
+      fpf self.out "OP.write_struct_end ()"
+    in
+
+    (* local helper:
+       how to reply with an unexpected_exception and a message.
+       the corresponding struct is "1: string message; 2: i32 type" *)
+    fpf self.out "(* reply using a runtime failure *)@ ";
+    fpf self.out
+      "@[<v2>let reply_exn_ (ue:unexpected_exception) (msg:string) : unit =@ ";
+    fpf self.out "OP.write_msg_begin {||} MSG_EXCEPTION seq_num;@ ";
+    fpf self.out "OP.write_msg_end ();@ ";
+    (* write fields *)
+    fpf self.out
+      "let ty = Smol_thrift.Types.int_of_unexpected_exception ue in@ ";
+    cg_write_fields self.out
+      [
+        0, A.Field.field_rpc_exn_type, "ty"; 1, A.Field.field_rpc_exn_msg, "msg";
+      ];
+    fpf self.out "@;<1 -2>in@]@ ";
+
+    (* guard against runtime errors here, now that we can reply (we have a
+       sequence number and so {!reply_exn_} can be defined above) *)
+    fpf self.out "try (@ ";
+
     fpf self.out "match msg_name, msg_ty with@ ";
 
     (* emit code to read struct making up arguments, binding them
@@ -713,7 +776,7 @@ end = struct
          | ret -> write_msg_out; …
          | exception E1 (* thrown *) -> write_msg_out …
          | exception E2 (* thrown *) -> write_msg_out …
-         | exception exn -> failwith "unhandled exception …"
+         | exception exn -> fail_ "unhandled exception …"
        ]
     *)
     let emit_fun_case (f : A.Function.t) =
@@ -758,26 +821,92 @@ end = struct
         fpf self.out "@]@ "
       ) else (
         (* call method, get result, send it back (or send back exception) *)
+        fpf self.out "(* call the user code *)@ ";
         fpf self.out "(@[<v>match self#%s %s () with" (mangle_name f.name) args;
+
         fpf self.out "@ | @[<v>res ->@ ";
-        (* send back result/exception *)
-        fpf self.out "OP.write_struct_begin {|success|};@ ";
-        (* write field, if we return anything *)
-        (match f.ty with
-        | A.Function_type.Void -> ()
-        | A.Function_type.Ty ret ->
-          cg_write_field self.out ("res", 0, A.Field.field_rpc_success ret);
-          fpf self.out ";@ ");
-        fpf self.out "OP.write_field_stop();@ ";
-        fpf self.out "OP.write_struct_end ()@]@ ";
-        (* TODO: handle each case in Throws *)
+        cg_reply_success (fun () ->
+            (* write field, if we return anything *)
+            match f.ty with
+            | A.Function_type.Void -> ()
+            | A.Function_type.Ty ret ->
+              cg_write_field self.out ("res", 0, A.Field.field_rpc_success ret);
+              fpf self.out ";@ ");
+
+        fpf self.out "@]";
+
+        (* generate code for declared exception *)
+        let cg_throw (exn_field : A.Field.t) : unit =
+          let exn_name, exn_fields_with_ids =
+            match exn_field.ty.view with
+            | A.Type.Named n ->
+              let name = mangle_cstor n in
+              let fs =
+                try Hashtbl.find self.exns name
+                with Not_found ->
+                  failwith (spf "cannot find definition of exn %S" name)
+              in
+              name, fs
+            | _ -> failwith "cannot throw anything but an exception"
+          and exn_f_id =
+            match exn_field.id with
+            | None ->
+              failwith
+                (spf "cannot have field %S in `throws` without explicit ID"
+                   exn_field.name)
+            | Some i -> i
+          in
+
+          let exn_fs =
+            List.map
+              (fun (f_id, f) -> f_id, f, mangle_name f.A.Field.name)
+              exn_fields_with_ids
+          in
+
+          (* match against exception *)
+          if exn_fs = [] then
+            fpf self.out "@ | @[<v>exception %s ->@ " exn_name
+          else
+            fpf self.out "@ | @[<v>exception (%s {%s}) ->@ " exn_name
+              (String.concat ";" @@ List.map (fun (_, _, n) -> n) exn_fs);
+
+          (* write fields in a single-field struct *)
+          cg_reply_success (fun () ->
+              fpf self.out "OP.write_field_begin {|%s|} T_STRUCT %d;@ "
+                (mangle_name exn_field.name)
+                exn_f_id;
+              if exn_fs <> [] then (
+                cg_write_fields self.out exn_fs;
+                fpf self.out ";@ "
+              );
+              fpf self.out "OP.write_field_stop();@ ";
+              fpf self.out "OP.write_field_end();@ ");
+          fpf self.out "@]"
+        in
+
+        (* handle "throws", if present *)
+        (match f.throws with
+        | None -> ()
+        | Some exns -> List.iter cg_throw exns);
+
+        (* unhandled exceptions *)
+        fpf self.out "@ | @[<v>exception exn ->@ ";
+        fpf self.out
+          "raise (Runtime_error (UE_internal_error, (Printexc.to_string \
+           exn)))@]@ ";
+
         fpf self.out "@])@]@ "
       )
     in
     List.iter emit_fun_case funs;
+    fpf self.out "| _n, _ -> ";
     fpf self.out
-      "| _n, _ -> failwith (Printf.sprintf {|invalid message %%S|} _n)@]@ ";
+      "raise (Runtime_error (UE_invalid_message_type, {|invalid message|}));@ ";
 
+    (* catch runtime errors and send them back as MSG_EXCEPTION *)
+    fpf self.out "@[<v2>) with Runtime_error (ue, msg) ->@ ";
+    fpf self.out "(* catch runtime errors and reify them *)@ ";
+    fpf self.out "reply_exn_ ue msg;@]@]";
     fpf self.out "@;<1 -2>end@]@.";
     ()
 
