@@ -329,6 +329,8 @@ end = struct
       if i > 0 then fpf out ";@ ";
       cg_write_field out (var_name, field_id, f)
     in
+    (* by increasing field, helps with compact protocol *)
+    let fs = List.sort (fun (i, _, _) (j, _, _) -> compare i j) fs in
     fpf out "@[<v2>begin@ ";
     List.iteri write_field fs;
     fpf out "@;<1 -2>end@]"

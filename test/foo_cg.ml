@@ -32,20 +32,20 @@ let rec write_foo (module OP:PROTOCOL_WRITE) (self:foo) : unit =
   let {x; y; z} = self in
   OP.write_struct_begin "foo";
   begin
-    (match x with
-     | None -> ()
-     | Some x ->
-       OP.write_field_begin "x" T_I32 1;
-       OP.write_i32 x;
-       OP.write_field_end());
     (match y with
      | None -> ()
      | Some x ->
-       OP.write_field_begin "y" T_STRING 2;
+       OP.write_field_begin "y" T_STRING 1;
        OP.write_string x;
        OP.write_field_end());
+    (match x with
+     | None -> ()
+     | Some x ->
+       OP.write_field_begin "x" T_I32 2;
+       OP.write_i32 x;
+       OP.write_field_end());
     begin
-      OP.write_field_begin "z" T_BOOL 3;
+      OP.write_field_begin "z" T_BOOL 5;
       OP.write_bool z;
       OP.write_field_end();
     end
@@ -62,21 +62,21 @@ let rec read_foo (module IP:PROTOCOL_READ) : foo =
   while !continue do
     match IP.read_field_begin () with
     | exception Smol_thrift.Types.Read_stop_field -> continue := false
-    | ("x", T_I32, _) | (_, T_I32, 1) ->
+    | ("x", T_I32, _) | (_, T_I32, 2) ->
       x := Some(IP.read_i32 ());
-    | ("x", _, _) | (_, _, 1) ->
+    | ("x", _, _) | (_, _, 2) ->
       raise (Runtime_error
-        (UE_invalid_protocol, {|invalid type for field (1: "x")|}))
-    | ("y", (T_STRING | T_BINARY), _) | (_, (T_STRING | T_BINARY), 2) ->
+        (UE_invalid_protocol, {|invalid type for field (2: "x")|}))
+    | ("y", (T_STRING | T_BINARY), _) | (_, (T_STRING | T_BINARY), 1) ->
       y := Some(IP.read_string ());
-    | ("y", _, _) | (_, _, 2) ->
+    | ("y", _, _) | (_, _, 1) ->
       raise (Runtime_error
-        (UE_invalid_protocol, {|invalid type for field (2: "y")|}))
-    | ("z", T_BOOL, _) | (_, T_BOOL, 3) ->
+        (UE_invalid_protocol, {|invalid type for field (1: "y")|}))
+    | ("z", T_BOOL, _) | (_, T_BOOL, 5) ->
       z := Some(IP.read_bool ());
-    | ("z", _, _) | (_, _, 3) ->
+    | ("z", _, _) | (_, _, 5) ->
       raise (Runtime_error
-        (UE_invalid_protocol, {|invalid type for field (3: "z")|}))
+        (UE_invalid_protocol, {|invalid type for field (5: "z")|}))
     | _ -> () (* unknown field *)
   done;
   IP.read_struct_end ();
@@ -85,7 +85,7 @@ let rec read_foo (module IP:PROTOCOL_READ) : foo =
   let z = match !z with
     | None ->
       raise (Runtime_error (UE_invalid_protocol,
-               {|field (3: "z") is required|}))
+               {|field (5: "z") is required|}))
     | Some x -> x in
   {x;y;z}
 
