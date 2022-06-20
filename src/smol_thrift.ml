@@ -4,6 +4,7 @@ module Types = Types
 module Basic_transports = Basic_transports
 module Debug_protocol = Debug_protocol
 module Binary_protocol = Binary_protocol
+module Compact_protocol = Compact_protocol
 module Service_multiplex = Service_multiplex
 module Transfer = Transfer
 open Types
