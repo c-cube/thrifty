@@ -192,7 +192,8 @@ let read_fooK (module IP:PROTOCOL_READ) : fooK =
 
 type bar = {
   foos: ((foo) list) list option;
-  kind: fooK option
+  kind: fooK option;
+  fooM: (fooK * (foo) list) list
 }
 
 let rec pp_bar out (self:bar) =
@@ -203,11 +204,13 @@ let rec pp_bar out (self:bar) =
   (match self.kind with
    | None -> ()
    | Some x -> Format.fprintf out {|kind=%a|} pp_fooK x);
+  Format.fprintf out "fooM=%a"
+    (pp_list (pp_pair pp_fooK (pp_list pp_foo))) self.fooM;
   Format.fprintf out "@]}"
 
 (** Serialize *)
 let rec write_bar (module OP:PROTOCOL_WRITE) (self:bar) : unit =
-  let {foos; kind} = self in
+  let {foos; kind; fooM} = self in
   OP.write_struct_begin "bar";
   begin
     (match foos with
@@ -223,10 +226,23 @@ let rec write_bar (module OP:PROTOCOL_WRITE) (self:bar) : unit =
          x;
        OP.write_list_end();
        OP.write_field_end());
+    begin
+      OP.write_field_begin "fooM" T_MAP 3;
+      OP.write_map_begin T_STRUCT T_LIST (List.length fooM);
+      List.iter
+        (fun (k,v) ->
+         write_fooK (module OP) k;
+         OP.write_list_begin T_STRUCT (List.length v);
+         List.iter (fun x -> write_foo (module OP) x) v;
+         OP.write_list_end())
+        fooM;
+      OP.write_map_end();
+      OP.write_field_end();
+    end;
     (match kind with
      | None -> ()
      | Some x ->
-       OP.write_field_begin "kind" T_STRUCT 2;
+       OP.write_field_begin "kind" T_STRUCT 5;
        write_fooK (module OP) x;
        OP.write_field_end())
   end;
@@ -238,34 +254,56 @@ let rec read_bar (module IP:PROTOCOL_READ) : bar =
   let continue = ref true in
   let foos = ref (Some ([])) in
   let kind = ref None in
+  let fooM = ref None in
   while !continue do
     match IP.read_field_begin () with
     | exception Smol_thrift.Types.Read_stop_field -> continue := false
     | ("foos", T_LIST, _) | (_, T_LIST, 1) ->
       foos :=
         Some((let _ty, len = IP.read_list_begin () in
-              assert (match _ty with T_LIST -> true | _ -> false);
+              assert (len=0 || match _ty with T_LIST -> true | _ -> false);
               let l = List.init len
                 (fun _i ->
                  (let _ty, len = IP.read_list_begin () in
-                  assert (match _ty with T_STRUCT -> true | _ -> false);
+                  assert (len=0 || match _ty with T_STRUCT -> true | _ -> false);
                   let l = List.init len (fun _i -> read_foo (module IP) ) in
                   IP.read_list_end(); l)) in
               IP.read_list_end(); l));
     | ("foos", _, _) | (_, _, 1) ->
       raise (Runtime_error
         (UE_invalid_protocol, {|invalid type for field (1: "foos")|}))
-    | ("kind", T_STRUCT, _) | (_, T_STRUCT, 2) ->
+    | ("kind", T_STRUCT, _) | (_, T_STRUCT, 5) ->
       kind := Some(read_fooK (module IP) );
-    | ("kind", _, _) | (_, _, 2) ->
+    | ("kind", _, _) | (_, _, 5) ->
       raise (Runtime_error
-        (UE_invalid_protocol, {|invalid type for field (2: "kind")|}))
+        (UE_invalid_protocol, {|invalid type for field (5: "kind")|}))
+    | ("fooM", T_MAP, _) | (_, T_MAP, 3) ->
+      fooM :=
+        Some((let tyk, tyv, len = IP.read_map_begin () in
+              assert (len=0 || match tyk, tyv with T_STRUCT,T_LIST -> true | _ -> false);
+              List.init len
+                (fun _i ->
+                 let k = read_fooK (module IP)  in
+                 let v =
+                   (let _ty, len = IP.read_list_begin () in
+                    assert (len=0 || match _ty with T_STRUCT -> true | _ -> false);
+                    let l = List.init len (fun _i -> read_foo (module IP) ) in
+                    IP.read_list_end(); l) in
+                 k,v)));
+    | ("fooM", _, _) | (_, _, 3) ->
+      raise (Runtime_error
+        (UE_invalid_protocol, {|invalid type for field (3: "fooM")|}))
     | _ -> () (* unknown field *)
   done;
   IP.read_struct_end ();
   let foos = !foos in
   let kind = !kind in
-  {foos;kind}
+  let fooM = match !fooM with
+    | None ->
+      raise (Runtime_error (UE_invalid_protocol,
+               {|field (3: "fooM") is required|}))
+    | Some x -> x in
+  {foos;kind;fooM}
 
 type fooOrBarOrBool =
   | Foo of foo
@@ -347,7 +385,7 @@ let write_bar2 (module OP:PROTOCOL_WRITE) (self:bar2) : unit =
 
 let read_bar2 (module IP:PROTOCOL_READ) : bar2 =
   (let _ty, len = IP.read_list_begin () in
-   assert (match _ty with T_STRUCT -> true | _ -> false);
+   assert (len=0 || match _ty with T_STRUCT -> true | _ -> false);
    let l = List.init len (fun _i -> read_bar (module IP) ) in
    IP.read_list_end(); l)
 

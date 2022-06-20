@@ -257,7 +257,7 @@ end = struct
     | List ty ->
       let fty = cg_read_field_ty_of_ty ty in
       fpf out "(@[let _ty, len = IP.read_list_begin () in@ ";
-      fpf out "assert (match _ty with %s -> true | _ -> false);@ " fty;
+      fpf out "assert (len=0 || match _ty with %s -> true | _ -> false);@ " fty;
       fpf out "@[<2>let l = List.init len@ (@[<hv>fun _i ->@ %a@])@] in@ "
         cg_read_for_ty ty;
       fpf out "IP.read_list_end();@ ";
@@ -265,12 +265,22 @@ end = struct
     | Set ty ->
       let fty = cg_read_field_ty_of_ty ty in
       fpf out "(@[let _ty, len = IP.read_set_begin () in@ ";
-      fpf out "assert (match _ty with %s -> true | _ -> false);@ " fty;
+      fpf out "assert (len=0 || match _ty with %s -> true | _ -> false);@ " fty;
       fpf out "@[<2>let l = List.init len@ (@[<hv>fun _i ->@ %a@])@] in@ "
         cg_read_for_ty ty;
       fpf out "IP.read_set_end();@ ";
       fpf out "l@])"
-    | Map (ty1, ty2) -> fpf out "assert false" (* TODO *)
+    | Map (ty1, ty2) ->
+      let fty1 = cg_read_field_ty_of_ty ty1 in
+      let fty2 = cg_read_field_ty_of_ty ty2 in
+      fpf out "(@[<v>let tyk, tyv, len = IP.read_map_begin () in@ ";
+      fpf out
+        "assert (len=0 || match tyk, tyv with %s,%s -> true | _ -> false);@ "
+        fty1 fty2;
+      fpf out
+        "@[<2>List.init len@ (@[<hv>fun _i ->@ @[<2>let k =@ %a in@]@ @[<2>let \
+         v =@ %a in@]@ k,v@])@]@])"
+        cg_read_for_ty ty1 cg_read_for_ty ty2
     | Base b ->
       let m =
         match b with
@@ -303,22 +313,6 @@ end = struct
         "(@[<v>match %s with@ | None -> ()@ | @[<v>Some x ->@ \
          OP.write_field_begin %S %s %d;@ %a;@ OP.write_field_end()@]@])"
         (mangle_name f.name) f.name fty field_id cg_write_for_ty ("x", f.ty)
-
-  (* TODO
-     let cg_read_field out ((name, field_id, f) : string * int * A.Field.t) : unit
-         =
-       let fty = cg_read_field_ty_of_ty f.ty in
-       if A.Field.is_required f then
-         fpf out
-           "@[<v2>begin@ OP.write_field_begin %S %s %d;@ %a;@ \
-            OP.write_field_end();@;\
-            <1 -2>end@]" f.name fty field_id cg_read_for_ty (name, f.ty)
-       else
-         fpf out
-           "(@[<v>match %s with@ | None -> ()@ | @[<v>Some x ->@ \
-            OP.write_field_begin %S %s %d;@ %a;@ OP.write_field_end()@]@])"
-           (mangle_name f.name) f.name fty field_id cg_read_for_ty ("x", f.ty)
-  *)
 
   (* generate code to write fields into a [protocol_write].
      Each field is paired with its assigned field ID and the name

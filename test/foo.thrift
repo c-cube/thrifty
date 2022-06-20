@@ -36,7 +36,8 @@ enum FooK {
 
 struct Bar {
   1: list<list<Foo>> foos = [];
-  2: optional FooK kind;
+  5: optional FooK kind;
+  3: required map<FooK, list<Foo>> fooM;
 }
 
 typedef list<Bar> Bar2;
