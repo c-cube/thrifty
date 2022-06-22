@@ -3,7 +3,7 @@
 let pp_pair ppk ppv out (k,v) = Format.fprintf out {|(%a,%a)|} ppk k ppv v
 let pp_list ppx out l = Format.fprintf out {|[@[%a@]]|}
    (Format.pp_print_list ~pp_sep:(fun out () -> Format.fprintf out {|;@ |}) ppx) l
-open Smol_thrift.Types
+open Thrifty.Types
 
 let n : int32 = 256l
 
@@ -61,7 +61,7 @@ let rec read_foo (module IP:PROTOCOL_READ) : foo =
   let z = ref None in
   while !continue do
     match IP.read_field_begin () with
-    | exception Smol_thrift.Types.Read_stop_field -> continue := false
+    | exception Thrifty.Types.Read_stop_field -> continue := false
     | ("x", T_I32, _) | (_, T_I32, 2) ->
       x := Some(IP.read_i32 ());
     | ("x", _, _) | (_, _, 2) ->
@@ -128,7 +128,7 @@ let rec read_loc (module IP:PROTOCOL_READ) : loc =
   let lat = ref None in
   while !continue do
     match IP.read_field_begin () with
-    | exception Smol_thrift.Types.Read_stop_field -> continue := false
+    | exception Thrifty.Types.Read_stop_field -> continue := false
     | ("long", T_DOUBLE, _) | (_, T_DOUBLE, 1) ->
       long := Some(IP.read_double ());
     | ("long", _, _) | (_, _, 1) ->
@@ -257,7 +257,7 @@ let rec read_bar (module IP:PROTOCOL_READ) : bar =
   let fooM = ref None in
   while !continue do
     match IP.read_field_begin () with
-    | exception Smol_thrift.Types.Read_stop_field -> continue := false
+    | exception Thrifty.Types.Read_stop_field -> continue := false
     | ("foos", T_LIST, _) | (_, T_LIST, 1) ->
       foos :=
         Some((let _ty, len = IP.read_list_begin () in
@@ -349,7 +349,7 @@ let rec read_fooOrBarOrBool (module IP:PROTOCOL_READ) : fooOrBarOrBool =
   let b = ref None in
   while !continue do
     match IP.read_field_begin () with
-    | exception Smol_thrift.Types.Read_stop_field -> continue := false
+    | exception Thrifty.Types.Read_stop_field -> continue := false
     | ("foo", T_STRUCT, _) | (_, T_STRUCT, 1) ->
       foo := Some(read_foo (module IP) );
     | ("foo", _, _) | (_, _, 1) ->
@@ -412,7 +412,7 @@ class virtual server_giveKind = object (self)
     let reply_exn_ (ue:unexpected_exception) (msg:string) : unit =
       OP.write_msg_begin {||} MSG_EXCEPTION seq_num;
       OP.write_msg_end ();
-      let ty = Smol_thrift.Types.int_of_unexpected_exception ue in
+      let ty = Thrifty.Types.int_of_unexpected_exception ue in
       begin
         begin
           OP.write_field_begin "type" T_I32 0;
@@ -435,7 +435,7 @@ class virtual server_giveKind = object (self)
       let foo = ref None in
       while !continue do
         match IP.read_field_begin () with
-        | exception Smol_thrift.Types.Read_stop_field -> continue := false
+        | exception Thrifty.Types.Read_stop_field -> continue := false
         | ("foo", T_STRUCT, _) | (_, T_STRUCT, 1) ->
           foo := Some(read_foo (module IP) );
         | ("foo", _, _) | (_, _, 1) ->
@@ -468,7 +468,7 @@ class virtual server_giveKind = object (self)
       let bar = ref None in
       while !continue do
         match IP.read_field_begin () with
-        | exception Smol_thrift.Types.Read_stop_field -> continue := false
+        | exception Thrifty.Types.Read_stop_field -> continue := false
         | ("bar", T_STRUCT, _) | (_, T_STRUCT, 1) ->
           bar := Some(read_bar (module IP) );
         | ("bar", _, _) | (_, _, 1) ->
@@ -523,7 +523,7 @@ class virtual server_giveKind = object (self)
       let k = ref None in
       while !continue do
         match IP.read_field_begin () with
-        | exception Smol_thrift.Types.Read_stop_field -> continue := false
+        | exception Thrifty.Types.Read_stop_field -> continue := false
         | ("how_many", T_I32, _) | (_, T_I32, 1) ->
           how_many := Some(IP.read_i32 ());
         | ("how_many", _, _) | (_, _, 1) ->
@@ -569,7 +569,7 @@ class virtual server_calculator = object (self)
     let reply_exn_ (ue:unexpected_exception) (msg:string) : unit =
       OP.write_msg_begin {||} MSG_EXCEPTION seq_num;
       OP.write_msg_end ();
-      let ty = Smol_thrift.Types.int_of_unexpected_exception ue in
+      let ty = Thrifty.Types.int_of_unexpected_exception ue in
       begin
         begin
           OP.write_field_begin "type" T_I32 0;
@@ -593,7 +593,7 @@ class virtual server_calculator = object (self)
       let y = ref None in
       while !continue do
         match IP.read_field_begin () with
-        | exception Smol_thrift.Types.Read_stop_field -> continue := false
+        | exception Thrifty.Types.Read_stop_field -> continue := false
         | ("x", T_I32, _) | (_, T_I32, 1) ->
           x := Some(IP.read_i32 ());
         | ("x", _, _) | (_, _, 1) ->
@@ -641,7 +641,7 @@ class virtual server_calculator = object (self)
       let y = ref None in
       while !continue do
         match IP.read_field_begin () with
-        | exception Smol_thrift.Types.Read_stop_field -> continue := false
+        | exception Thrifty.Types.Read_stop_field -> continue := false
         | ("x", T_I32, _) | (_, T_I32, 1) ->
           x := Some(IP.read_i32 ());
         | ("x", _, _) | (_, _, 1) ->

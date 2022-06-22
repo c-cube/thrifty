@@ -57,7 +57,7 @@ end = struct
 
   let add_prelude ~filename self =
     fpf self.out "%s@." (prelude filename);
-    fpf self.out "open Smol_thrift.Types@.";
+    fpf self.out "open Thrifty.Types@.";
     ()
 
   let code self =
@@ -355,7 +355,7 @@ end = struct
     fpf out "@[<v2>while !continue do@ ";
     fpf out "match IP.read_field_begin () with@ ";
     fpf out
-      "@[| exception Smol_thrift.Types.Read_stop_field -> continue := false@]@ ";
+      "@[| exception Thrifty.Types.Read_stop_field -> continue := false@]@ ";
     List.iter read_field fs;
     fpf out "| _ -> () (* unknown field *)";
     fpf out "@;<1 -2>done@];@ ";
@@ -752,8 +752,7 @@ end = struct
     fpf self.out "OP.write_msg_begin {||} MSG_EXCEPTION seq_num;@ ";
     fpf self.out "OP.write_msg_end ();@ ";
     (* write fields *)
-    fpf self.out
-      "let ty = Smol_thrift.Types.int_of_unexpected_exception ue in@ ";
+    fpf self.out "let ty = Thrifty.Types.int_of_unexpected_exception ue in@ ";
     cg_write_fields self.out
       [
         0, A.Field.field_rpc_exn_type, "ty"; 1, A.Field.field_rpc_exn_msg, "msg";

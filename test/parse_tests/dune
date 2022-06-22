@@ -1,34 +1,39 @@
 (rule
  (alias runtest)
- (deps (:file ThriftTest.thrift))
- (package smol_thrift_compiler)
+ (deps
+  (:file ThriftTest.thrift))
+ (package thrifty_compiler)
  (action
   (run ./bin/parse_print.exe %{file})))
 
 (rule
  (alias runtest)
- (deps (:file fb303.thrift))
- (package smol_thrift_compiler)
+ (deps
+  (:file fb303.thrift))
+ (package thrifty_compiler)
  (action
   (run ./bin/parse_print.exe %{file})))
 
 (rule
  (alias runtest)
- (deps (:file shared.thrift))
- (package smol_thrift_compiler)
+ (deps
+  (:file shared.thrift))
+ (package thrifty_compiler)
  (action
   (run ./bin/parse_print.exe %{file})))
 
 (rule
  (alias runtest)
- (deps (:file tutorial.thrift))
- (package smol_thrift_compiler)
+ (deps
+  (:file tutorial.thrift))
+ (package thrifty_compiler)
  (action
   (run ./bin/parse_print.exe %{file})))
 
 (rule
  (alias runtest)
- (deps (:file cassandra.thrift))
- (package smol_thrift_compiler)
+ (deps
+  (:file cassandra.thrift))
+ (package thrifty_compiler)
  (action
   (run ./bin/parse_print.exe %{file})))
