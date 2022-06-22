@@ -1,5 +1,6 @@
-encoded data (37 bytes): "\128\001\000\004\000\000\000\005hello\000\000\000*\b\000\001\000\000\000\017\011\000\002\000\000\000\005hello\000"
+encoded data (19 bytes): "\130\129*\nhello\021\"\024\nhello\000"
 msg name=hello seq=42
+read field "" ty=I32 id=1
 got field x
 got field y
 got end of message
@@ -7,3 +8,5 @@ transfer to debug protocol
 tokens: [msg_begin("hello",MSG_ONEWAY,seq=42);msg_end;struct_begin("");
          field_begin("",I32,1);17l;field_end;field_begin("",BINARY,2);
          binary("hello");field_end;field_stop;struct_end]
+re-encoded tokens: "\130\129*\nhello\021\"\024\nhello\000"
+data = data'? true

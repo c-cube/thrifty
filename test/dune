@@ -1,7 +1,7 @@
 (tests
  (libraries smol_thrift containers)
  (flags :standard -open Smol_thrift -open Smol_thrift.Types)
- (names t1 t_binary_prot foo_cg))
+ (names t1 t_binary_prot t_compact_prot foo_cg))
 
 (rule
  (targets foo_cg.ml)
