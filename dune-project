@@ -3,7 +3,7 @@
 (generate_opam_files true)
 
 (source
- (github c-cube/smol_thrift))
+ (github c-cube/thrifty))
 
 (authors "c-cube")
 
@@ -12,8 +12,9 @@
 (license MIT)
 
 (package
- (name smol_thrift)
- (synopsis "Runtime library for Smol_thrift, a reimplementation of thrift")
+ (name thrifty)
+ (synopsis
+   "Runtime library for Thrifty, a reimplementation of thrift for OCaml")
  (depends
   (ocaml
    (>= 4.08))
@@ -22,12 +23,12 @@
   (topics thrift rpc serialization)))
 
 (package
- (name smol_thrift_compiler)
- (synopsis "IDL compiler for smol_thrift")
+ (name thrifty_compiler)
+ (synopsis "IDL compiler for thrifty")
  (depends
   (ocaml
    (>= 4.08))
-  (smol_thrift
+  (thrifty
    (= :version))
   (containers
    (>= 3.6))

@@ -1,3 +1,5 @@
+(** Types for Thrift. *)
+
 (** Runtime types *)
 
 type field_type =
@@ -45,6 +47,41 @@ let string_of_message_type = function
   | MSG_EXCEPTION -> "MSG_EXCEPTION"
   | MSG_ONEWAY -> "MSG_ONEWAY"
 
+(** Inspired from the java cases for errors not declared in the IDL
+    (see "thrift-rpc.md") *)
+type unexpected_exception =
+  | UE_unknown  (** used in case the type from the peer is unknown. *)
+  | UE_unknown_method
+      (** used in case the method requested by the client is unknown by the server. *)
+  | UE_invalid_message_type  (** no usage was found. *)
+  | UE_wrong_method_name  (** no usage was found. *)
+  | UE_bad_sequence_id
+      (** used internally by the client to indicate a wrong sequence id in the response. *)
+  | UE_missing_result
+      (** used internally by the client to indicate a response without any field (result nor exception). *)
+  | UE_internal_error
+      (** used when the server throws an exception that is not declared in the Thrift IDL file.  *)
+  | UE_protocol_error
+      (** used when something goes wrong during decoding. For example when a list is too long or a required field is missing. *)
+  | UE_invalid_transform  (** no usage was found. *)
+  | UE_invalid_protocol  (** no usage was found. *)
+  | UE_unsupported_client_type  (** no usage was found. *)
+
+let int_of_unexpected_exception = function
+  | UE_unknown -> 0l
+  | UE_unknown_method -> 1l
+  | UE_invalid_message_type -> 2l
+  | UE_wrong_method_name -> 3l
+  | UE_bad_sequence_id -> 4l
+  | UE_missing_result -> 5l
+  | UE_internal_error -> 6l
+  | UE_protocol_error -> 7l
+  | UE_invalid_transform -> 8l
+  | UE_invalid_protocol -> 9l
+  | UE_unsupported_client_type -> 1l
+
+exception Runtime_error of unexpected_exception * string
+
 type size = int
 (** Number of elements in a list/set/map *)
 
@@ -54,6 +91,16 @@ type field_id = int
 type sequence_number = int
 (** Sequence number of a message on the wire. It should be unique in
   a given client/server pair. *)
+
+(** {2 Protocols}
+
+    A protocol is a particular encoding/decoding format that specifies
+    how to map structured data (the messages and structures and types
+    described by the user in the IDL) to bytes.
+
+    A given message can thus be serialized to bytes in various ways by just
+    picking a different protocol.
+*)
 
 (** Protocol to write messages *)
 module type PROTOCOL_WRITE = sig
@@ -118,6 +165,12 @@ end
 
 type protocol_read = (module PROTOCOL_READ)
 
+(** {2 Transports}
+
+    a Transport is concerned with moving bytes from a place to another,
+    and possibly handle framing, authentication, etc. It does not care
+    what is contained in these bytes. *)
+
 module type TRANSPORT_READ = sig
   val is_closed : unit -> bool
   val close : unit -> unit
@@ -150,3 +203,27 @@ module type TRANSPORT_WRITE = sig
 end
 
 type transport_write = (module TRANSPORT_WRITE)
+
+(** {2 Service-related types} *)
+
+type 'res client_outgoing_call =
+  (protocol_write -> unit) * (protocol_read -> 'res)
+(** RPC 2-way call from a client, waiting to be serialized into some
+    outgoing communication method; paired with a function to read back
+    the answer.
+*)
+
+type client_outgoing_oneway = protocol_write -> unit
+(** An outgoing oneway RPC call. No response expected. *)
+
+(** Class for server implementation of a server. *)
+class virtual service_any =
+  object
+    method virtual process : protocol_read -> protocol_write -> unit
+    (** Process a message.
+      This might be provided with a different pair of protocols
+     every time it is called. *)
+
+    method virtual name : string
+    (** Name of this service. This can be useful to multiplex. *)
+  end

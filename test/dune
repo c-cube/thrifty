@@ -1,11 +1,12 @@
 (tests
- (libraries smol_thrift containers)
- (flags :standard -open Smol_thrift -open Smol_thrift.Types)
- (names t1 t_binary_prot foo_cg))
+ (libraries thrifty containers)
+ (flags :standard -open Thrifty -open Thrifty.Types)
+ (names t1 t_binary_prot t_compact_prot foo_cg))
 
 (rule
  (targets foo_cg.ml)
+ (mode promote)
  (deps
   (:file foo.thrift))
  (action
-  (run ../src/compiler/smol_thrift_compiler.exe %{file} -o %{targets})))
+  (run ../src/compiler/thrifty_compiler.exe --pp %{file} -o %{targets})))

@@ -60,7 +60,11 @@ module Token = struct
   let pp out self = Format.pp_print_string out (to_string self)
 end
 
-(** A write-protocol that produces a stream of tokens *)
+(** A write-protocol that produces a stream of tokens.
+
+   [debug_write()] returns a tuple [f, writer] where [writer]
+   is a protocol writer, and [f()] returns the list of tokens
+   written so far into [writer]. *)
 let debug_write () : (unit -> Token.t list) * protocol_write =
   let open Token in
   let toks : Token.t list ref = ref [] in
@@ -90,3 +94,83 @@ let debug_write () : (unit -> Token.t list) * protocol_write =
     let write_binary x = add @@ T_binary x
   end in
   get_tokens, (module M)
+
+[@@@ocaml.warning "-8"]
+
+(** [debug_read toks] is a reader that returns tokens from [toks] one by one. *)
+let debug_read (toks : Token.t list) : protocol_read =
+  let open Token in
+  let toks = ref toks in
+  let push_back x = toks := x :: !toks in
+
+  let fail_ msg = raise (Runtime_error (UE_invalid_protocol, msg)) in
+
+  let pop () =
+    match !toks with
+    | x :: tl ->
+      toks := tl;
+      x
+    | [] -> fail_ "expected another token"
+  in
+
+  (* pop a token matched by [f], else fail with a message mentioning "what" *)
+  let pop_a what f =
+    let tok = pop () in
+    match f tok with
+    | x -> x
+    | exception Match_failure _ ->
+      fail_ (Printf.sprintf "expected %s, got `%s`" what (Token.to_string tok))
+  in
+
+  let module M = struct
+    let read_msg_begin () =
+      pop_a "msg_begin" (function T_msg_begin (s, ty, seq) -> s, ty, seq)
+
+    let read_msg_end () = pop_a "msg_end" (function T_msg_end -> ())
+
+    let read_struct_begin () =
+      pop_a "struct begin" (function T_struct_begin s -> s)
+
+    let read_struct_end () = pop_a "struct end" (function T_struct_end -> ())
+
+    let read_field_begin () =
+      match pop () with
+      | T_field_begin (s, ty, id) -> s, ty, id
+      | T_field_stop -> raise Read_stop_field
+      | T_struct_end as tok ->
+        (* NOTE: we are permissive here, we handle implicit field_stop *)
+        push_back tok;
+        raise Read_stop_field
+      | _tok ->
+        fail_
+          (Printf.sprintf "expected field_begin, got `%s`"
+             (Token.to_string _tok))
+
+    let read_field_end () = pop_a "field end" (function T_field_end -> ())
+
+    let read_map_begin () =
+      pop_a "map begin" (function T_map_begin (t1, t2, sz) -> t1, t2, sz)
+
+    let read_map_end () = pop_a "map end" (function T_map_end -> ())
+
+    let read_list_begin () =
+      pop_a "list begin" (function T_list_begin (ty, sz) -> ty, sz)
+
+    let read_list_end () = pop_a "list end" (function T_list_end -> ())
+
+    let read_set_begin () =
+      pop_a "set begin" (function T_set_begin (ty, sz) -> ty, sz)
+
+    let read_set_end () = pop_a "set end" (function T_set_end -> ())
+    let read_bool () = pop_a "bool" (function T_bool b -> b)
+    let read_byte () = pop_a "byte" (function T_byte x -> x)
+    let read_i16 () = pop_a "i16" (function T_i16 x -> x)
+    let read_i32 () = pop_a "i32" (function T_i32 x -> x)
+    let read_i64 () = pop_a "i64" (function T_i64 x -> x)
+    let read_double () = pop_a "double" (function T_double x -> x)
+    let read_string () = pop_a "string" (function T_string x -> x)
+    let read_binary () = pop_a "binary" (function T_binary x -> x)
+  end in
+  (module M)
+
+[@@@ocaml.warning "+8"]

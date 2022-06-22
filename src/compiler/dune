@@ -1,13 +1,13 @@
 (executable
- (name smol_thrift_compiler)
- (package smol_thrift_compiler)
- (modules smol_thrift_compiler)
- (libraries smol_thrift smol_thrift_compiler.lib)
- (public_name smol_thrift_compiler))
+ (name thrifty_compiler)
+ (package thrifty_compiler)
+ (modules thrifty_compiler)
+ (libraries thrifty thrifty_compiler.lib)
+ (public_name thrifty_compiler))
 
 (library
- (name smol_thrift_compiler_lib)
- (modules :standard \ smol_thrift_compiler)
- (libraries containers smol_thrift)
- (flags :standard -open Smol_thrift.Types)
- (public_name smol_thrift_compiler.lib))
+ (name thrifty_compiler_lib)
+ (modules :standard \ thrifty_compiler)
+ (libraries containers thrifty)
+ (flags :standard -open Thrifty.Types)
+ (public_name thrifty_compiler.lib))

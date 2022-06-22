@@ -296,20 +296,31 @@ let field_req =
      <|> exact_keyword "optional" *> return Ast.Field.Optional
      <|> return Ast.Field.Default)
 
-let field =
-  let+ id = field_id
-  and+ req = field_req
-  and+ ty = field_type
-  and+ name = identifier
-  and+ default =
+let field ~required =
+  let* id = field_id
+  and* req = field_req
+  and* ty = field_type
+  and* name = identifier
+  and* default =
     (let+ v = equal *> const_value in
      Some v)
     <|> return None
-  and+ _ = metadata
-  and+ _ = optional_ list_sep_ in
-  { Ast.Field.id; req; ty; name; default }
+  and* _ = metadata
+  and* _ = optional_ list_sep_ in
+  if required && req = Optional then
+    fail "field must be required"
+  else (
+    let req =
+      if required then
+        Ast.Field.Required
+      else
+        req
+    in
+    return { Ast.Field.id; req; ty; name; default }
+  )
 
-let field_list = list_until_ ~until:(char '}') field
+let field_list ~all_required =
+  list_until_ ~until:(char '}') @@ field ~required:all_required
 
 let service_functions =
   let fun_ =
@@ -319,12 +330,15 @@ let service_functions =
       <|> let+ ty = field_type in
           Ast.Function_type.Ty ty
     and+ name = identifier
-    and+ args = in_parens (list_until_ ~until:(char ')') field)
+    and+ args =
+      in_parens (list_until_ ~until:(char ')') @@ field ~required:false)
     and+ _ = skip_white
     and+ throws =
       try_or (exact_keyword "throws")
         ~f:(fun _ ->
-          let+ l = in_parens (list_until_ ~until:(char ')') field) in
+          let+ l =
+            in_parens (list_until_ ~until:(char ')') @@ field ~required:false)
+          in
           Some l)
         ~else_:(return None)
     and+ _ = metadata
@@ -360,7 +374,7 @@ let def : Ast.Definition.t option P.t =
            exact_keyword "struct"
            *> let+ name = identifier
               and+ _ = optional_ (skip_white *> exact_keyword "xsd_all")
-              and+ fields = in_braces field_list
+              and+ fields = in_braces @@ field_list ~all_required:false
               and+ meta = metadata
               and+ _ = optional_ list_sep_ in
               Some Ast.Definition.{ name; meta; view = Struct { fields } } );
@@ -368,7 +382,7 @@ let def : Ast.Definition.t option P.t =
            exact_keyword "union"
            *> let+ name = identifier
               and+ _ = optional_ (skip_white *> exact_keyword "xsd_all")
-              and+ fields = in_braces field_list
+              and+ fields = in_braces @@ field_list ~all_required:true
               and+ meta = metadata
               and+ _ = optional_ list_sep_ in
               Some Ast.Definition.{ name; meta; view = Union { fields } } );
@@ -376,7 +390,7 @@ let def : Ast.Definition.t option P.t =
            exact_keyword "exception"
            *> let+ name = identifier
               and+ _ = optional_ (skip_white *> exact_keyword "xsd_all")
-              and+ fields = in_braces field_list
+              and+ fields = in_braces @@ field_list ~all_required:false
               and+ meta = metadata
               and+ _ = optional_ list_sep_ in
               Some Ast.Definition.{ name; meta; view = Exception { fields } } );

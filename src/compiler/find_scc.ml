@@ -72,7 +72,7 @@ let names_in_def (d : Definition.t) : identifier Iter.t =
   | Definition.Exception { fields }
   | Definition.Struct { fields } ->
     Iter.of_list fields |> Iter.flat_map names_in_field
-  | Definition.Service { funs } ->
+  | Definition.Service { funs; _ } ->
     Iter.of_list funs |> Iter.flat_map names_in_fun
 
 module Scc = struct
@@ -115,7 +115,7 @@ module Scc = struct
     let graph =
       {
         nodes =
-          List.mapi (fun i d -> d.Definition.name, d) l
+          List.map (fun d -> d.Definition.name, d) l
           |> List.to_seq |> Hashtbl.of_seq;
       }
     in

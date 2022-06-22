@@ -1,4 +1,4 @@
-open Smol_thrift_compiler_lib
+open Thrifty_compiler_lib
 
 let () =
   let file = ref "" in

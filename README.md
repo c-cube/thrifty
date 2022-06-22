@@ -1,5 +1,5 @@
 
-# Smol thrift [![build](https://github.com/c-cube/smol_thrift/actions/workflows/main.yml/badge.svg)](https://github.com/c-cube/smol_thrift/actions/workflows/main.yml)
+# Thrifty [![build](https://github.com/c-cube/thrifty/actions/workflows/main.yml/badge.svg)](https://github.com/c-cube/smol_thrift/actions/workflows/main.yml)
 
 A thrift reimplementation in OCaml.
 
@@ -17,7 +17,7 @@ MIT license
 
 ### Protocols
 
-- [ ] compact protocol
+- [x] compact protocol
 - [x] binary protocol
 
 ### Transports
@@ -30,6 +30,6 @@ MIT license
 
 - [x] parser
 - [x] code generation for types
-- [ ] code generation for printers
-- [ ] code generation for codecs
-- [ ] code generation for services
+- [x] code generation for printers
+- [x] code generation for codecs
+- [ ] (wip) code generation for services
