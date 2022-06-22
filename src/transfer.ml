@@ -82,7 +82,8 @@ let rec transfer_struct ((module IP) : protocol_read)
       OP.write_field_end ()
     | exception Types.Read_stop_field ->
       (* no more fields *)
-      continue := false
+      continue := false;
+      OP.write_field_stop ()
   done;
 
   IP.read_struct_end ();

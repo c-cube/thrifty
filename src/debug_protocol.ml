@@ -136,7 +136,9 @@ let debug_read (toks : Token.t list) : protocol_read =
     let read_field_begin () =
       match pop () with
       | T_field_begin (s, ty, id) -> s, ty, id
+      | T_field_stop -> raise Read_stop_field
       | T_struct_end as tok ->
+        (* NOTE: we are permissive here, we handle implicit field_stop *)
         push_back tok;
         raise Read_stop_field
       | _tok ->
