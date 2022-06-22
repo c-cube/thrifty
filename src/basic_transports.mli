@@ -11,3 +11,6 @@ val transport_write_file : string -> transport_write
 
 val transport_read_file : string -> transport_read
 (** Transport that reads from a file *)
+
+val with_transport_write_file : string -> (transport_write -> 'a) -> 'a
+val with_transport_read_file : string -> (transport_read -> 'a) -> 'a

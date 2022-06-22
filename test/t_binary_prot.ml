@@ -27,7 +27,7 @@ let proto_read =
   Binary_protocol.read (Basic_transports.transport_of_string data)
 
 let () =
-  let ((module P) as p) = proto_read in
+  let (module P) = proto_read in
   (let name, ty, seq = P.read_msg_begin () in
    Fmt.printf "msg name=%s seq=%d@." name seq;
    assert (name = "hello");

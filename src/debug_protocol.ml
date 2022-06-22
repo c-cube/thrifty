@@ -167,9 +167,9 @@ let debug_read (toks : Token.t list) : protocol_read =
     let read_i16 () = pop_a "i16" (function T_i16 x -> x)
     let read_i32 () = pop_a "i32" (function T_i32 x -> x)
     let read_i64 () = pop_a "i64" (function T_i64 x -> x)
-    let read_double x = pop_a "double" (function T_double x -> x)
-    let read_string x = pop_a "string" (function T_string x -> x)
-    let read_binary x = pop_a "binary" (function T_binary x -> x)
+    let read_double () = pop_a "double" (function T_double x -> x)
+    let read_string () = pop_a "string" (function T_string x -> x)
+    let read_binary () = pop_a "binary" (function T_binary x -> x)
   end in
   (module M)
 

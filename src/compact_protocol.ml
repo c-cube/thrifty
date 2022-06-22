@@ -23,7 +23,7 @@ module Dec_ = struct
     !res
 
   let zigzag tr : int64 =
-    let v = (varint [@inlined]) tr in
+    let v = varint tr in
     Int64.(logxor (shift_right v 1) (neg (logand v Int64.one)))
 end
 
@@ -46,8 +46,6 @@ module Enc_ = struct
 
   let zigzag tr (i : int64) =
     varint tr Int64.(logxor (shift_left i 1) (shift_right i 63))
-
-  let int_as_zigzag tr i = zigzag tr (Int64.of_int i)
 end
 
 let int_of_message_type = function
