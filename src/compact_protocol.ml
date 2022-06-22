@@ -287,7 +287,7 @@ let read (tr : transport_read) : protocol_read =
 
       (* get field ID, either a delta from previous field ID
          (short form) or a full zigzag int *)
-      let f_id = b0 land (0b1111_0000 lsr 4) in
+      let f_id = (b0 land 0b1111_0000) lsr 4 in
       let f_id =
         if f_id = 0 then
           Int64.to_int (Dec_.zigzag tr)
