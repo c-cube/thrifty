@@ -21,8 +21,8 @@ jobs:
       with:
         ocaml-compiler: ${{ matrix.ocaml-compiler }}
     - run: opam pin -n .
-    - run: opam depext -yt smol_thrift smol_thrift_compiler
+    - run: opam depext -yt thrifty thrifty_compiler
     - run: opam install -t . --deps-only
-    - run: opam exec -- dune build --display=short -p smol_thrift,smol_thrift_compiler
-    - run: opam exec -- dune runtest --display=short -p smol_thrift,smol_thrift_compiler
-    - run: opam exec -- dune build --display=short -p smol_thrift,smol_thrift_compiler
+    - run: opam exec -- dune build --display=short -p thrifty,thrifty_compiler
+    - run: opam exec -- dune runtest --display=short -p thrifty,thrifty_compiler
+    - run: opam exec -- dune build --display=short -p thrifty,thrifty_compiler
