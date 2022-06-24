@@ -562,6 +562,38 @@ class virtual server_giveKind = object (self)
       reply_exn_ ue msg;
 end
 
+(** Client-side for service "giveKind" *)
+module Client_giveKind : sig
+
+  val get_kind : ?foo:foo -> fooK client_outgoing_call
+
+  val send_bar : ?bar:bar -> unit client_outgoing_call
+
+  val send_whatev : how_many:int32-> ?k:fooK -> client_outgoing_oneway
+
+end = struct
+
+  let get_kind ?(foo:foo option) : _ client_outgoing_call =
+    fun ~seq_num (module OP:PROTOCOL_WRITE) ->
+    OP.write_msg_begin "get_kind" MSG_CALL seq_num;
+    OP.write_msg_end();
+    assert false
+
+  let send_bar ?(bar:bar option) : _ client_outgoing_call =
+    fun ~seq_num (module OP:PROTOCOL_WRITE) ->
+    OP.write_msg_begin "send_bar" MSG_CALL seq_num;
+    OP.write_msg_end();
+    assert false
+
+  let send_whatev ~(how_many:int32)
+      ?(k:fooK option) : client_outgoing_oneway =
+    fun ~seq_num (module OP:PROTOCOL_WRITE) ->
+    OP.write_msg_begin "send_whatev" MSG_ONEWAY seq_num;
+    OP.write_msg_end();
+    assert false
+
+end
+
 (** Server-side for service "calculator" *)
 class virtual server_calculator = object (self)
   inherit service_any
@@ -707,5 +739,28 @@ class virtual server_calculator = object (self)
     ) with Runtime_error (ue, msg) ->
       (* catch runtime errors and reify them *)
       reply_exn_ ue msg;
+end
+
+(** Client-side for service "calculator" *)
+module Client_calculator : sig
+
+  val add : x:int32-> y:int32 -> int32 client_outgoing_call
+
+  val mult : x:int32-> y:int32 -> int32 client_outgoing_call
+
+end = struct
+
+  let add ~(x:int32) ~(y:int32) : _ client_outgoing_call =
+    fun ~seq_num (module OP:PROTOCOL_WRITE) ->
+    OP.write_msg_begin "add" MSG_CALL seq_num;
+    OP.write_msg_end();
+    assert false
+
+  let mult ~(x:int32) ~(y:int32) : _ client_outgoing_call =
+    fun ~seq_num (module OP:PROTOCOL_WRITE) ->
+    OP.write_msg_begin "mult" MSG_CALL seq_num;
+    OP.write_msg_end();
+    assert false
+
 end
 

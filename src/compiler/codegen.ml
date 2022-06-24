@@ -690,7 +690,7 @@ end = struct
 
     ()
 
-  let cg_service (self : t) name ~extends funs : unit =
+  let cg_service_server (self : t) name ~extends funs : unit =
     let name = mangle_name name in
 
     (* def *)
@@ -922,6 +922,295 @@ end = struct
     fpf self.out "@;<1 -2>end@]@.";
     ()
 
+  let cg_service_client (self : t) name ~extends funs : unit =
+    let name = mangle_name name in
+
+    (* output signature for the function *)
+    let cg_method_sig (f : A.Function.t) =
+      let f_name = mangle_name f.name in
+      let pp_arg out (arg : A.Field.t) =
+        let lbl =
+          match arg.req with
+          | A.Field.Optional | A.Field.Default -> "?"
+          | A.Field.Required -> ""
+        in
+        fpf out "%s%s:%a" lbl arg.name pp_ty arg.ty
+      in
+
+      fpf self.out "@   @[<2>val %s :@ @[%a -> " f_name (pp_l ~sep:"->" pp_arg)
+        f.args;
+      if f.oneway then
+        fpf self.out "client_outgoing_oneway@]@]@ "
+      else
+        fpf self.out "%a client_outgoing_call@]@]@ " pp_fun_ty f.ty
+    in
+
+    (* output implementation for the function *)
+    let cg_method (f : A.Function.t) =
+      let f_name = mangle_name f.name in
+      let pp_arg out (arg : A.Field.t) =
+        let lbl, suff =
+          match arg.req with
+          | A.Field.Optional | A.Field.Default -> "?", " option"
+          | A.Field.Required -> "~", ""
+        in
+        fpf out "%s(%s:%a%s)" lbl arg.name pp_ty arg.ty suff
+      in
+
+      fpf self.out "@   @[<v2>@[<4>let %s %a " f_name (pp_l ~sep:"" pp_arg)
+        f.args;
+
+      if f.oneway then
+        fpf self.out
+          ": client_outgoing_oneway =@]@ fun ~seq_num (module \
+           OP:PROTOCOL_WRITE) ->@ "
+      else
+        fpf self.out
+          ": _ client_outgoing_call =@]@ fun ~seq_num (module \
+           OP:PROTOCOL_WRITE) ->@ ";
+
+      (* FIXME: where to get the seq number? *)
+      fpf self.out "OP.write_msg_begin %S %s seq_num;@ " f.name
+        (if f.oneway then
+          "MSG_ONEWAY"
+        else
+          "MSG_CALL");
+      fpf self.out "OP.write_msg_end();@ ";
+
+      (*
+      if f.oneway then
+        fpf self.out "@   @[method virtual %s :@ @[%a -> unit -> unit@]@]@ "
+          f_name (pp_l ~sep:"->" pp_arg) f.args
+      else
+        fpf self.out
+          "@   @[method virtual %s :@ @[%a -> unit -> %a \
+           server_outgoing_reply@]@]@ "
+          f_name (pp_l ~sep:"->" pp_arg) f.args pp_fun_ty f.ty
+          *)
+      fpf self.out "assert false";
+
+      fpf self.out "@]@ "
+    in
+
+    (* def *)
+    fpf self.out "@.(** Client-side for service %S *)@." name;
+    fpf self.out "@[<v>module Client_%s : sig@ " name;
+
+    (* inherit from extend *)
+    Option.iter
+      (fun e ->
+        fpf self.out "include module type of Client_%s@ " (mangle_name e))
+      extends;
+
+    List.iter cg_method_sig funs;
+    fpf self.out "@;<1 -2>end = struct@ ";
+
+    (* inherit from extend *)
+    Option.iter
+      (fun e -> fpf self.out "include Client_%s@ " (mangle_name e))
+      extends;
+
+    List.iter cg_method funs;
+
+    fpf self.out "@;<1 -2>end@]@.";
+
+    (*
+    (* now generate the processor *)
+    fpf self.out "@   (** Process an incoming message *)@ ";
+    fpf self.out
+      "  @[<v2>method process (ip:protocol_read) ~(reply:(protocol_write -> \
+       unit) -> unit) : unit =@ ";
+
+    fpf self.out "let (module IP) = ip in@ ";
+
+    fpf self.out "let msg_name, msg_ty, seq_num = IP.read_msg_begin () in@ ";
+    fpf self.out "IP.read_msg_end();@ ";
+
+    (* local helper: reply with success *)
+    let cg_reply_success f =
+      fpf self.out "reply @@@@ fun (module OP:PROTOCOL_WRITE) ->@ ";
+      fpf self.out "OP.write_msg_begin {||} MSG_REPLY seq_num;@ ";
+
+      fpf self.out "OP.write_msg_end();@ ";
+      fpf self.out "OP.write_struct_begin {||};@ ";
+      f ();
+      fpf self.out "OP.write_field_stop();@ ";
+      fpf self.out "OP.write_struct_end ()"
+    in
+
+    (* local helper:
+       how to reply with an unexpected_exception and a message.
+       the corresponding struct is "1: string message; 2: i32 type" *)
+    fpf self.out "(* reply using a runtime failure *)@ ";
+    fpf self.out
+      "@[<v2>let reply_exn_ (ue:unexpected_exception) (msg:string) : unit =@ ";
+    fpf self.out "reply @@@@ fun (module OP:PROTOCOL_WRITE) ->@ ";
+    fpf self.out "OP.write_msg_begin {||} MSG_EXCEPTION seq_num;@ ";
+    fpf self.out "OP.write_msg_end ();@ ";
+    (* write fields *)
+    fpf self.out "let ty = Thrifty.Types.int_of_unexpected_exception ue in@ ";
+    cg_write_fields self.out
+      [
+        0, A.Field.field_rpc_exn_type, "ty"; 1, A.Field.field_rpc_exn_msg, "msg";
+      ];
+    fpf self.out "@;<1 -2>in@]@ ";
+
+    (* guard against runtime errors here, now that we can reply (we have a
+       sequence number and so {!reply_exn_} can be defined above) *)
+    fpf self.out "try (@ ";
+
+    fpf self.out "match msg_name, msg_ty with@ ";
+
+    (* emit code to read struct making up arguments, binding them
+       into references as we go;
+       then emit [match self#<the method name> ?a1:!a1 ~a2:!a2 () with
+         | ret -> write_msg_out; …
+         | exception E1 (* thrown *) -> write_msg_out …
+         | exception E2 (* thrown *) -> write_msg_out …
+         | exception exn -> fail_ "unhandled exception …"
+       ]
+    *)
+    let emit_fun_case (f : A.Function.t) =
+      let fields_with_id = pair_with_field_id f.args in
+      let m_ty =
+        if f.oneway then (
+          (match f.ty with
+          | A.Function_type.Void -> ()
+          | A.Function_type.Ty ty ->
+            failwith
+            @@ Format.asprintf
+                 "cannot have a oneway function %S with return type %a" f.name
+                 A.Type.pp ty);
+          "MSG_ONEWAY"
+        ) else
+          "MSG_CALL"
+      in
+      fpf self.out "| @[<v>%S, %s ->@ " f.name m_ty;
+      fpf self.out "(* read arguments *)@ ";
+      fpf self.out "let _name = IP.read_struct_begin () in@ ";
+      cg_read_fields self.out fields_with_id;
+      fpf self.out "IP.read_struct_end();@ ";
+      List.iter (cg_read_extract_var_of_field self.out) fields_with_id;
+      (* call method *)
+      let args =
+        String.concat " "
+        @@ List.map
+             (fun (f : A.Field.t) ->
+               let pre =
+                 if A.Field.is_required f then
+                   "~"
+                 else
+                   "?"
+               in
+               spf "%s%s" pre (mangle_name f.name))
+             f.args
+      in
+      if f.oneway then (
+        (* just call method *)
+        fpf self.out "(try self#%s %s () with _ -> ());" (mangle_name f.name)
+          args;
+        fpf self.out "@]@ "
+      ) else (
+        (* call method, get result, send it back (or send back exception) *)
+        fpf self.out "@[<v2>let reply (x:_ result) : unit =@ ";
+        fpf self.out "match x with";
+
+        fpf self.out "@ | @[<v>Ok res ->@ ";
+        cg_reply_success (fun () ->
+            (* write field, if we return anything *)
+            match f.ty with
+            | A.Function_type.Void -> ()
+            | A.Function_type.Ty ret ->
+              cg_write_field self.out ("res", 0, A.Field.field_rpc_success ret);
+              fpf self.out ";@ ");
+
+        fpf self.out "@]";
+
+        (* generate code for declared exception *)
+        let cg_throw (exn_field : A.Field.t) : unit =
+          let exn_name, exn_fields_with_ids =
+            match exn_field.ty.view with
+            | A.Type.Named n ->
+              let name = mangle_cstor n in
+              let fs =
+                try Hashtbl.find self.exns name
+                with Not_found ->
+                  failwith (spf "cannot find definition of exn %S" name)
+              in
+              name, fs
+            | _ -> failwith "cannot throw anything but an exception"
+          and exn_f_id =
+            match exn_field.id with
+            | None ->
+              failwith
+                (spf "cannot have field %S in `throws` without explicit ID"
+                   exn_field.name)
+            | Some i -> i
+          in
+
+          let exn_fs =
+            List.map
+              (fun (f_id, f) -> f_id, f, mangle_name f.A.Field.name)
+              exn_fields_with_ids
+          in
+
+          (* match against exception *)
+          if exn_fs = [] then
+            fpf self.out "@ | @[<v>Error %s ->@ " exn_name
+          else
+            fpf self.out "@ | @[<v>exception (%s {%s}) ->@ " exn_name
+              (String.concat ";" @@ List.map (fun (_, _, n) -> n) exn_fs);
+
+          (* write fields in a single-field struct *)
+          cg_reply_success (fun () ->
+              fpf self.out "reply @@@@ fun (module OP:PROTOCOL_WRITE) ->@ ";
+              fpf self.out "OP.write_field_begin {|%s|} T_STRUCT %d;@ "
+                (mangle_name exn_field.name)
+                exn_f_id;
+              if exn_fs <> [] then (
+                cg_write_fields self.out exn_fs;
+                fpf self.out ";@ "
+              );
+              fpf self.out "OP.write_field_stop();@ ";
+              fpf self.out "OP.write_field_end();@ ");
+          fpf self.out "@]"
+        in
+
+        (* handle "throws", if present *)
+        (match f.throws with
+        | None -> ()
+        | Some exns -> List.iter cg_throw exns);
+
+        (* unhandled exceptions *)
+        fpf self.out "@ | @[<v>Error exn ->@ ";
+        fpf self.out
+          "raise (Runtime_error (UE_internal_error, (Printexc.to_string \
+           exn)))@]";
+
+        (* end of reply function *)
+        fpf self.out "@;<1 -2>@] in@ ";
+
+        (* call user code with [reply] as continuation *)
+        fpf self.out "(* call the user code *)@ ";
+        fpf self.out "(@[<v>try self#%s %s () ~reply" (mangle_name f.name) args;
+        fpf self.out "@ with e -> reply (Error e)";
+        fpf self.out "@])@]@ "
+      )
+    in
+    List.iter emit_fun_case funs;
+    fpf self.out "| _n, _ -> ";
+    fpf self.out
+      "raise (Runtime_error (UE_invalid_message_type, {|invalid message|}));@ ";
+
+    (* catch runtime errors and send them back as MSG_EXCEPTION *)
+    fpf self.out "@[<v2>) with Runtime_error (ue, msg) ->@ ";
+    fpf self.out "(* catch runtime errors and reify them *)@ ";
+    fpf self.out "reply_exn_ ue msg;@]@]";
+    fpf self.out "@;<1 -2>end@]@.";
+
+    *)
+    ()
+
   (** does this produce an OCaml type definition? *)
   let is_newtype = function
     | A.Definition.{ view = Struct _ | Union _; _ } -> true
@@ -951,7 +1240,8 @@ end = struct
     | defs when List.for_all is_newtype defs ->
       cg_new_types ~pp self (List.map as_newtype_exn defs)
     | [ A.Definition.{ name; view = Service { extends; funs }; _ } ] ->
-      cg_service self name ~extends funs
+      cg_service_server self name ~extends funs;
+      cg_service_client self name ~extends funs
     | defs ->
       failwith
       @@ Format.asprintf "cannot generate code for definitions %a"

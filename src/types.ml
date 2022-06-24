@@ -207,13 +207,15 @@ type transport_write = (module TRANSPORT_WRITE)
 (** {2 Service-related types} *)
 
 type 'res client_outgoing_call =
-  (protocol_write -> unit) * (protocol_read -> 'res)
-(** RPC 2-way call from a client, waiting to be serialized into some
-    outgoing communication method; paired with a function to read back
-    the answer.
+  seq_num:sequence_number -> protocol_write -> unit * (protocol_read -> 'res)
+(** RPC 2-way call from a client, writing the serialized request into
+    the [protocol_write], and return a function to read back
+    the answer when it comes back.
+
+    This allows for an asynchronous implementation.
 *)
 
-type client_outgoing_oneway = protocol_write -> unit
+type client_outgoing_oneway = seq_num:sequence_number -> protocol_write -> unit
 (** An outgoing oneway RPC call. No response expected. *)
 
 type 'res server_outgoing_reply = reply:(('res, exn) result -> unit) -> unit
