@@ -715,8 +715,15 @@ end = struct
         in
         fpf out "%s%s:%a" lbl arg.name pp_ty arg.ty
       in
-      fpf self.out "@   @[method virtual %s :@ @[%a -> unit -> %a@]@]@ " f_name
-        (pp_l ~sep:"->" pp_arg) f.args pp_fun_ty f.ty
+
+      if f.oneway then
+        fpf self.out "@   @[method virtual %s :@ @[%a -> unit -> unit@]@]@ "
+          f_name (pp_l ~sep:"->" pp_arg) f.args
+      else
+        fpf self.out
+          "@   @[method virtual %s :@ @[%a -> unit -> %a \
+           server_outgoing_reply@]@]@ "
+          f_name (pp_l ~sep:"->" pp_arg) f.args pp_fun_ty f.ty
     in
 
     List.iter cg_method funs;
@@ -724,16 +731,17 @@ end = struct
     (* now generate the processor *)
     fpf self.out "@   (** Process an incoming message *)@ ";
     fpf self.out
-      "  @[<v2>method process (ip:protocol_read) (op:protocol_write) : unit =@ ";
+      "  @[<v2>method process (ip:protocol_read) ~(reply:(protocol_write -> \
+       unit) -> unit) : unit =@ ";
 
     fpf self.out "let (module IP) = ip in@ ";
-    fpf self.out "let (module OP) = op in@ ";
 
     fpf self.out "let msg_name, msg_ty, seq_num = IP.read_msg_begin () in@ ";
     fpf self.out "IP.read_msg_end();@ ";
 
     (* local helper: reply with success *)
     let cg_reply_success f =
+      fpf self.out "reply @@@@ fun (module OP:PROTOCOL_WRITE) ->@ ";
       fpf self.out "OP.write_msg_begin {||} MSG_REPLY seq_num;@ ";
 
       fpf self.out "OP.write_msg_end();@ ";
@@ -749,6 +757,7 @@ end = struct
     fpf self.out "(* reply using a runtime failure *)@ ";
     fpf self.out
       "@[<v2>let reply_exn_ (ue:unexpected_exception) (msg:string) : unit =@ ";
+    fpf self.out "reply @@@@ fun (module OP:PROTOCOL_WRITE) ->@ ";
     fpf self.out "OP.write_msg_begin {||} MSG_EXCEPTION seq_num;@ ";
     fpf self.out "OP.write_msg_end ();@ ";
     (* write fields *)
@@ -816,10 +825,10 @@ end = struct
         fpf self.out "@]@ "
       ) else (
         (* call method, get result, send it back (or send back exception) *)
-        fpf self.out "(* call the user code *)@ ";
-        fpf self.out "(@[<v>match self#%s %s () with" (mangle_name f.name) args;
+        fpf self.out "@[<v2>let reply (x:_ result) : unit =@ ";
+        fpf self.out "match x with";
 
-        fpf self.out "@ | @[<v>res ->@ ";
+        fpf self.out "@ | @[<v>Ok res ->@ ";
         cg_reply_success (fun () ->
             (* write field, if we return anything *)
             match f.ty with
@@ -860,13 +869,14 @@ end = struct
 
           (* match against exception *)
           if exn_fs = [] then
-            fpf self.out "@ | @[<v>exception %s ->@ " exn_name
+            fpf self.out "@ | @[<v>Error %s ->@ " exn_name
           else
             fpf self.out "@ | @[<v>exception (%s {%s}) ->@ " exn_name
               (String.concat ";" @@ List.map (fun (_, _, n) -> n) exn_fs);
 
           (* write fields in a single-field struct *)
           cg_reply_success (fun () ->
+              fpf self.out "reply @@@@ fun (module OP:PROTOCOL_WRITE) ->@ ";
               fpf self.out "OP.write_field_begin {|%s|} T_STRUCT %d;@ "
                 (mangle_name exn_field.name)
                 exn_f_id;
@@ -885,11 +895,18 @@ end = struct
         | Some exns -> List.iter cg_throw exns);
 
         (* unhandled exceptions *)
-        fpf self.out "@ | @[<v>exception exn ->@ ";
+        fpf self.out "@ | @[<v>Error exn ->@ ";
         fpf self.out
           "raise (Runtime_error (UE_internal_error, (Printexc.to_string \
-           exn)))@]@ ";
+           exn)))@]";
 
+        (* end of reply function *)
+        fpf self.out "@;<1 -2>@] in@ ";
+
+        (* call user code with [reply] as continuation *)
+        fpf self.out "(* call the user code *)@ ";
+        fpf self.out "(@[<v>try self#%s %s () ~reply" (mangle_name f.name) args;
+        fpf self.out "@ with e -> reply (Error e)";
         fpf self.out "@])@]@ "
       )
     in

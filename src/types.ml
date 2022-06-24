@@ -216,13 +216,19 @@ type 'res client_outgoing_call =
 type client_outgoing_oneway = protocol_write -> unit
 (** An outgoing oneway RPC call. No response expected. *)
 
+type 'res server_outgoing_reply = reply:(('res, exn) result -> unit) -> unit
+
 (** Class for server implementation of a server. *)
 class virtual service_any =
   object
-    method virtual process : protocol_read -> protocol_write -> unit
-    (** Process a message.
-      This might be provided with a different pair of protocols
-     every time it is called. *)
+    method virtual process
+        : protocol_read -> reply:((protocol_write -> unit) -> unit) -> unit
+    (** Process a message. The function is given a [reply] callback
+        that it can call when the response is ready. This allows the
+        implementation to use a thread pool or an asynchronous framework
+
+        This might be provided with a different pair of protocols
+        every time it is called. *)
 
     method virtual name : string
     (** Name of this service. This can be useful to multiplex. *)

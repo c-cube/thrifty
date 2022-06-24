@@ -11,8 +11,7 @@ let service_multiplex (l : service_any list) : service_any =
     inherit service_any
     method name = ""
 
-    method process ((module R) : protocol_read)
-        ((module W) as w : protocol_write) =
+    method process ((module R) : protocol_read) ~reply : unit =
       let name, typ, seq = R.read_msg_begin () in
 
       let service_name, meth_name =
@@ -35,5 +34,5 @@ let service_multiplex (l : service_any list) : service_any =
 
         let read_msg_begin () = meth_name, typ, seq
       end in
-      service#process (module R2) w
+      service#process (module R2) ~reply
   end

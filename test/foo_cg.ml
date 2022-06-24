@@ -396,20 +396,20 @@ class virtual server_giveKind = object (self)
   inherit service_any
   method name = "giveKind"
 
-  method virtual get_kind : ?foo:foo -> unit -> fooK
+  method virtual get_kind : ?foo:foo -> unit -> fooK server_outgoing_reply
 
-  method virtual send_bar : ?bar:bar -> unit -> unit
+  method virtual send_bar : ?bar:bar -> unit -> unit server_outgoing_reply
 
   method virtual send_whatev : how_many:int32-> ?k:fooK -> unit -> unit
 
   (** Process an incoming message *)
-  method process (ip:protocol_read) (op:protocol_write) : unit =
+  method process (ip:protocol_read) ~(reply:(protocol_write -> unit) -> unit) : unit =
     let (module IP) = ip in
-    let (module OP) = op in
     let msg_name, msg_ty, seq_num = IP.read_msg_begin () in
     IP.read_msg_end();
     (* reply using a runtime failure *)
     let reply_exn_ (ue:unexpected_exception) (msg:string) : unit =
+      reply @@ fun (module OP:PROTOCOL_WRITE) ->
       OP.write_msg_begin {||} MSG_EXCEPTION seq_num;
       OP.write_msg_end ();
       let ty = Thrifty.Types.int_of_unexpected_exception ue in
@@ -445,22 +445,26 @@ class virtual server_giveKind = object (self)
       done;
       IP.read_struct_end();
       let foo = !foo in
+      let reply (x:_ result) : unit =
+        match x with
+        | Ok res ->
+          reply @@ fun (module OP:PROTOCOL_WRITE) ->
+          OP.write_msg_begin {||} MSG_REPLY seq_num;
+          OP.write_msg_end();
+          OP.write_struct_begin {||};
+          begin
+            OP.write_field_begin "success" T_STRUCT 0;
+            write_fooK (module OP) res;
+            OP.write_field_end();
+          end;
+          OP.write_field_stop();
+          OP.write_struct_end ()
+        | Error exn ->
+          raise (Runtime_error (UE_internal_error, (Printexc.to_string exn)))
+       in
       (* call the user code *)
-      (match self#get_kind ?foo () with
-       | res ->
-         OP.write_msg_begin {||} MSG_REPLY seq_num;
-         OP.write_msg_end();
-         OP.write_struct_begin {||};
-         begin
-           OP.write_field_begin "success" T_STRUCT 0;
-           write_fooK (module OP) res;
-           OP.write_field_end();
-         end;
-         OP.write_field_stop();
-         OP.write_struct_end ()
-       | exception exn ->
-         raise (Runtime_error (UE_internal_error, (Printexc.to_string exn)))
-       )
+      (try self#get_kind ?foo () ~reply
+       with e -> reply (Error e))
     | "send_bar", MSG_CALL ->
       (* read arguments *)
       let _name = IP.read_struct_begin () in
@@ -478,43 +482,51 @@ class virtual server_giveKind = object (self)
       done;
       IP.read_struct_end();
       let bar = !bar in
+      let reply (x:_ result) : unit =
+        match x with
+        | Ok res ->
+          reply @@ fun (module OP:PROTOCOL_WRITE) ->
+          OP.write_msg_begin {||} MSG_REPLY seq_num;
+          OP.write_msg_end();
+          OP.write_struct_begin {||};
+          OP.write_field_stop();
+          OP.write_struct_end ()
+        | Error Ohno ->
+          reply @@ fun (module OP:PROTOCOL_WRITE) ->
+          OP.write_msg_begin {||} MSG_REPLY seq_num;
+          OP.write_msg_end();
+          OP.write_struct_begin {||};
+          reply @@ fun (module OP:PROTOCOL_WRITE) ->
+          OP.write_field_begin {|o|} T_STRUCT 2;
+          OP.write_field_stop();
+          OP.write_field_end();
+          OP.write_field_stop();
+          OP.write_struct_end ()
+        | exception (Ohno2 {really_bad}) ->
+          reply @@ fun (module OP:PROTOCOL_WRITE) ->
+          OP.write_msg_begin {||} MSG_REPLY seq_num;
+          OP.write_msg_end();
+          OP.write_struct_begin {||};
+          reply @@ fun (module OP:PROTOCOL_WRITE) ->
+          OP.write_field_begin {|o2|} T_STRUCT 3;
+          begin
+            (match really_bad with
+             | None -> ()
+             | Some x ->
+               OP.write_field_begin "really_bad" T_BOOL 1;
+               OP.write_bool x;
+               OP.write_field_end())
+          end;
+          OP.write_field_stop();
+          OP.write_field_end();
+          OP.write_field_stop();
+          OP.write_struct_end ()
+        | Error exn ->
+          raise (Runtime_error (UE_internal_error, (Printexc.to_string exn)))
+       in
       (* call the user code *)
-      (match self#send_bar ?bar () with
-       | res ->
-         OP.write_msg_begin {||} MSG_REPLY seq_num;
-         OP.write_msg_end();
-         OP.write_struct_begin {||};
-         OP.write_field_stop();
-         OP.write_struct_end ()
-       | exception Ohno ->
-         OP.write_msg_begin {||} MSG_REPLY seq_num;
-         OP.write_msg_end();
-         OP.write_struct_begin {||};
-         OP.write_field_begin {|o|} T_STRUCT 2;
-         OP.write_field_stop();
-         OP.write_field_end();
-         OP.write_field_stop();
-         OP.write_struct_end ()
-       | exception (Ohno2 {really_bad}) ->
-         OP.write_msg_begin {||} MSG_REPLY seq_num;
-         OP.write_msg_end();
-         OP.write_struct_begin {||};
-         OP.write_field_begin {|o2|} T_STRUCT 3;
-         begin
-           (match really_bad with
-            | None -> ()
-            | Some x ->
-              OP.write_field_begin "really_bad" T_BOOL 1;
-              OP.write_bool x;
-              OP.write_field_end())
-         end;
-         OP.write_field_stop();
-         OP.write_field_end();
-         OP.write_field_stop();
-         OP.write_struct_end ()
-       | exception exn ->
-         raise (Runtime_error (UE_internal_error, (Printexc.to_string exn)))
-       )
+      (try self#send_bar ?bar () ~reply
+       with e -> reply (Error e))
     | "send_whatev", MSG_ONEWAY ->
       (* read arguments *)
       let _name = IP.read_struct_begin () in
@@ -555,18 +567,20 @@ class virtual server_calculator = object (self)
   inherit service_any
   method name = "calculator"
 
-  method virtual add : x:int32-> y:int32 -> unit -> int32
+  method virtual add :
+  x:int32-> y:int32 -> unit -> int32 server_outgoing_reply
 
-  method virtual mult : x:int32-> y:int32 -> unit -> int32
+  method virtual mult :
+  x:int32-> y:int32 -> unit -> int32 server_outgoing_reply
 
   (** Process an incoming message *)
-  method process (ip:protocol_read) (op:protocol_write) : unit =
+  method process (ip:protocol_read) ~(reply:(protocol_write -> unit) -> unit) : unit =
     let (module IP) = ip in
-    let (module OP) = op in
     let msg_name, msg_ty, seq_num = IP.read_msg_begin () in
     IP.read_msg_end();
     (* reply using a runtime failure *)
     let reply_exn_ (ue:unexpected_exception) (msg:string) : unit =
+      reply @@ fun (module OP:PROTOCOL_WRITE) ->
       OP.write_msg_begin {||} MSG_EXCEPTION seq_num;
       OP.write_msg_end ();
       let ty = Thrifty.Types.int_of_unexpected_exception ue in
@@ -617,22 +631,26 @@ class virtual server_calculator = object (self)
           raise (Runtime_error (UE_invalid_protocol,
                    {|field (2: "y") is required|}))
         | Some x -> x in
+      let reply (x:_ result) : unit =
+        match x with
+        | Ok res ->
+          reply @@ fun (module OP:PROTOCOL_WRITE) ->
+          OP.write_msg_begin {||} MSG_REPLY seq_num;
+          OP.write_msg_end();
+          OP.write_struct_begin {||};
+          begin
+            OP.write_field_begin "success" T_I32 0;
+            OP.write_i32 res;
+            OP.write_field_end();
+          end;
+          OP.write_field_stop();
+          OP.write_struct_end ()
+        | Error exn ->
+          raise (Runtime_error (UE_internal_error, (Printexc.to_string exn)))
+       in
       (* call the user code *)
-      (match self#add ~x ~y () with
-       | res ->
-         OP.write_msg_begin {||} MSG_REPLY seq_num;
-         OP.write_msg_end();
-         OP.write_struct_begin {||};
-         begin
-           OP.write_field_begin "success" T_I32 0;
-           OP.write_i32 res;
-           OP.write_field_end();
-         end;
-         OP.write_field_stop();
-         OP.write_struct_end ()
-       | exception exn ->
-         raise (Runtime_error (UE_internal_error, (Printexc.to_string exn)))
-       )
+      (try self#add ~x ~y () ~reply
+       with e -> reply (Error e))
     | "mult", MSG_CALL ->
       (* read arguments *)
       let _name = IP.read_struct_begin () in
@@ -665,22 +683,26 @@ class virtual server_calculator = object (self)
           raise (Runtime_error (UE_invalid_protocol,
                    {|field (2: "y") is required|}))
         | Some x -> x in
+      let reply (x:_ result) : unit =
+        match x with
+        | Ok res ->
+          reply @@ fun (module OP:PROTOCOL_WRITE) ->
+          OP.write_msg_begin {||} MSG_REPLY seq_num;
+          OP.write_msg_end();
+          OP.write_struct_begin {||};
+          begin
+            OP.write_field_begin "success" T_I32 0;
+            OP.write_i32 res;
+            OP.write_field_end();
+          end;
+          OP.write_field_stop();
+          OP.write_struct_end ()
+        | Error exn ->
+          raise (Runtime_error (UE_internal_error, (Printexc.to_string exn)))
+       in
       (* call the user code *)
-      (match self#mult ~x ~y () with
-       | res ->
-         OP.write_msg_begin {||} MSG_REPLY seq_num;
-         OP.write_msg_end();
-         OP.write_struct_begin {||};
-         begin
-           OP.write_field_begin "success" T_I32 0;
-           OP.write_i32 res;
-           OP.write_field_end();
-         end;
-         OP.write_field_stop();
-         OP.write_struct_end ()
-       | exception exn ->
-         raise (Runtime_error (UE_internal_error, (Printexc.to_string exn)))
-       )
+      (try self#mult ~x ~y () ~reply
+       with e -> reply (Error e))
     | _n, _ -> raise (Runtime_error (UE_invalid_message_type, {|invalid message|}));
     ) with Runtime_error (ue, msg) ->
       (* catch runtime errors and reify them *)
