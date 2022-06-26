@@ -146,6 +146,7 @@ let write (tr : transport_write) : protocol_write =
     let write_msg_end () = ()
     let write_struct_begin _s = ()
     let write_struct_end () = ()
+    let flush = Tr.flush
 
     let write_field_begin_ ~ty_as_int:(ty_n : int) id =
       let delta = id - !prev_field_id in

@@ -128,6 +128,9 @@ module type PROTOCOL_WRITE = sig
   val write_double : float -> unit
   val write_string : string -> unit
   val write_binary : string -> unit
+
+  val flush : unit -> unit
+  (** Flush underlying transport *)
 end
 
 type protocol_write = (module PROTOCOL_WRITE)

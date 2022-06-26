@@ -83,7 +83,8 @@ let write (tr : transport_write) : protocol_write =
 
     let write_msg_end () = ()
     let write_struct_begin _s = ()
-    let write_struct_end () = ()
+    let write_struct_end () = Tr.flush ()
+    let flush = Tr.flush
 
     let write_field_begin _name ty id =
       (* fits in 16 bits *)

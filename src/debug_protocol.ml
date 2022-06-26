@@ -92,6 +92,7 @@ let debug_write () : (unit -> Token.t list) * protocol_write =
     let write_double x = add @@ T_double x
     let write_string x = add @@ T_string x
     let write_binary x = add @@ T_binary x
+    let flush () = ()
   end in
   get_tokens, (module M)
 
