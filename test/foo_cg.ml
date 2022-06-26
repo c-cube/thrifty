@@ -15,16 +15,15 @@ type foo = {
 
 let rec pp_foo out (self:foo) =
   Format.fprintf out "{@[";
-  (match self.x with
-   | None -> ()
-   | Some x -> Format.fprintf out {|x=%a|}
-     (fun out self -> Format.fprintf out "%ld" self) x);
-  (match self.y with
-   | None -> ()
-   | Some x -> Format.fprintf out {|y=%a|}
-     (fun out self -> Format.fprintf out "%S" self) x);
-  Format.fprintf out "z=%a"
-    (fun out self -> Format.fprintf out "%B" self) self.z;
+  Option.iter
+    (fun x -> Format.fprintf out {|x=|}; Format.fprintf out "%ld" x)
+    self.x;
+  Format.fprintf out ";@ ";
+  Option.iter
+    (fun x -> Format.fprintf out {|y=|}; Format.fprintf out "%S" x)
+    self.y;
+  Format.fprintf out ";@ ";
+  Format.fprintf out "z="; Format.fprintf out "%B" self.z;
   Format.fprintf out "@]}"
 
 (** Serialize *)
@@ -32,18 +31,16 @@ let rec write_foo (module OP:PROTOCOL_WRITE) (self:foo) : unit =
   let {x; y; z} = self in
   OP.write_struct_begin "foo";
   begin
-    (match y with
-     | None -> ()
-     | Some x ->
+    Option.iter
+      (fun x ->
        OP.write_field_begin "y" T_STRING 1;
        OP.write_string x;
-       OP.write_field_end());
-    (match x with
-     | None -> ()
-     | Some x ->
+       OP.write_field_end()) y;
+    Option.iter
+      (fun x ->
        OP.write_field_begin "x" T_I32 2;
        OP.write_i32 x;
-       OP.write_field_end());
+       OP.write_field_end()) x;
     begin
       OP.write_field_begin "z" T_BOOL 5;
       OP.write_bool z;
@@ -96,10 +93,9 @@ type loc = {
 
 let rec pp_loc out (self:loc) =
   Format.fprintf out "{@[";
-  Format.fprintf out "long=%a"
-    (fun out self -> Format.fprintf out "%f" self) self.long;
-  Format.fprintf out "lat=%a"
-    (fun out self -> Format.fprintf out "%f" self) self.lat;
+  Format.fprintf out "long="; Format.fprintf out "%f" self.long;
+  Format.fprintf out ";@ ";
+  Format.fprintf out "lat="; Format.fprintf out "%f" self.lat;
   Format.fprintf out "@]}"
 
 (** Serialize *)
@@ -198,14 +194,16 @@ type bar = {
 
 let rec pp_bar out (self:bar) =
   Format.fprintf out "{@[";
-  (match self.foos with
-   | None -> ()
-   | Some x -> Format.fprintf out {|foos=%a|} (pp_list (pp_list pp_foo)) x);
-  (match self.kind with
-   | None -> ()
-   | Some x -> Format.fprintf out {|kind=%a|} pp_fooK x);
-  Format.fprintf out "fooM=%a"
-    (pp_list (pp_pair pp_fooK (pp_list pp_foo))) self.fooM;
+  Option.iter
+    (fun x -> Format.fprintf out {|foos=|}; pp_list (pp_list pp_foo) out x)
+    self.foos;
+  Format.fprintf out ";@ ";
+  Option.iter
+    (fun x -> Format.fprintf out {|kind=|}; pp_fooK out x)
+    self.kind;
+  Format.fprintf out ";@ ";
+  Format.fprintf out "fooM="; pp_list (pp_pair pp_fooK (pp_list pp_foo))
+    out self.fooM;
   Format.fprintf out "@]}"
 
 (** Serialize *)
@@ -213,9 +211,8 @@ let rec write_bar (module OP:PROTOCOL_WRITE) (self:bar) : unit =
   let {foos; kind; fooM} = self in
   OP.write_struct_begin "bar";
   begin
-    (match foos with
-     | None -> ()
-     | Some x ->
+    Option.iter
+      (fun x ->
        OP.write_field_begin "foos" T_LIST 1;
        OP.write_list_begin T_LIST (List.length x);
        List.iter
@@ -225,7 +222,7 @@ let rec write_bar (module OP:PROTOCOL_WRITE) (self:bar) : unit =
           OP.write_list_end())
          x;
        OP.write_list_end();
-       OP.write_field_end());
+       OP.write_field_end()) foos;
     begin
       OP.write_field_begin "fooM" T_MAP 3;
       OP.write_map_begin T_STRUCT T_LIST (List.length fooM);
@@ -239,12 +236,11 @@ let rec write_bar (module OP:PROTOCOL_WRITE) (self:bar) : unit =
       OP.write_map_end();
       OP.write_field_end();
     end;
-    (match kind with
-     | None -> ()
-     | Some x ->
+    Option.iter
+      (fun x ->
        OP.write_field_begin "kind" T_STRUCT 5;
        write_fooK (module OP) x;
-       OP.write_field_end())
+       OP.write_field_end()) kind
   end;
   OP.write_struct_end ()
 
@@ -315,7 +311,7 @@ let rec pp_fooOrBarOrBool out (self:fooOrBarOrBool) =
   | Foo self -> Format.fprintf out "Foo (%a)" pp_foo self
   | Bar self -> Format.fprintf out "Bar (%a)" pp_bar self
   | B self -> Format.fprintf out "B (%a)"
-    (fun out self -> Format.fprintf out "%B" self) self
+    (fun out x -> Format.fprintf out "%B" x) self
 
 (** Serialize *)
 let rec write_fooOrBarOrBool (module OP:PROTOCOL_WRITE) (self:fooOrBarOrBool) : unit =
@@ -338,7 +334,8 @@ let rec write_fooOrBarOrBool (module OP:PROTOCOL_WRITE) (self:fooOrBarOrBool) : 
        OP.write_field_begin "b" T_BOOL 3;
        OP.write_bool x;
        OP.write_field_end();
-     end);OP.write_struct_end ()
+     end);
+  OP.write_struct_end ()
 
 (** Deserialize *)
 let rec read_fooOrBarOrBool (module IP:PROTOCOL_READ) : fooOrBarOrBool =
@@ -373,7 +370,10 @@ let rec read_fooOrBarOrBool (module IP:PROTOCOL_READ) : fooOrBarOrBool =
    | Some x,_,_ -> Foo x
    | _,Some x,_ -> Bar x
    | _,_,Some x -> B x
-   | _ -> raise (Runtime_error (UE_protocol_error, Printf.sprintf {|no field set for "fooOrBarOrBool"|}))
+   | _ ->
+     raise (Runtime_error
+            (UE_protocol_error,
+             Printf.sprintf {|no field set for "fooOrBarOrBool"|}))
    )
 
 type bar2 = (bar) list
@@ -458,7 +458,8 @@ class virtual server_giveKind = object (self)
             OP.write_field_end();
           end;
           OP.write_field_stop();
-          OP.write_struct_end ()
+          OP.write_struct_end ();
+          OP.flush ()
         | Error exn ->
           raise (Runtime_error (UE_internal_error, (Printexc.to_string exn)))
        in
@@ -490,7 +491,8 @@ class virtual server_giveKind = object (self)
           OP.write_msg_end();
           OP.write_struct_begin {||};
           OP.write_field_stop();
-          OP.write_struct_end ()
+          OP.write_struct_end ();
+          OP.flush ()
         | Error Ohno ->
           reply @@ fun (module OP:PROTOCOL_WRITE) ->
           OP.write_msg_begin {||} MSG_REPLY seq_num;
@@ -501,7 +503,8 @@ class virtual server_giveKind = object (self)
           OP.write_field_stop();
           OP.write_field_end();
           OP.write_field_stop();
-          OP.write_struct_end ()
+          OP.write_struct_end ();
+          OP.flush ()
         | exception (Ohno2 {really_bad}) ->
           reply @@ fun (module OP:PROTOCOL_WRITE) ->
           OP.write_msg_begin {||} MSG_REPLY seq_num;
@@ -510,17 +513,17 @@ class virtual server_giveKind = object (self)
           reply @@ fun (module OP:PROTOCOL_WRITE) ->
           OP.write_field_begin {|o2|} T_STRUCT 3;
           begin
-            (match really_bad with
-             | None -> ()
-             | Some x ->
+            Option.iter
+              (fun x ->
                OP.write_field_begin "really_bad" T_BOOL 1;
                OP.write_bool x;
-               OP.write_field_end())
+               OP.write_field_end()) really_bad
           end;
           OP.write_field_stop();
           OP.write_field_end();
           OP.write_field_stop();
-          OP.write_struct_end ()
+          OP.write_struct_end ();
+          OP.flush ()
         | Error exn ->
           raise (Runtime_error (UE_internal_error, (Printexc.to_string exn)))
        in
@@ -577,20 +580,116 @@ end = struct
     fun ~seq_num (module OP:PROTOCOL_WRITE) ->
     OP.write_msg_begin "get_kind" MSG_CALL seq_num;
     OP.write_msg_end();
-    assert false
+    (* write arguments *)
+    OP.write_struct_begin "get_kind";
+    begin
+      Option.iter
+        (fun x ->
+         OP.write_field_begin "foo" T_STRUCT 1;
+         write_foo (module OP) x;
+         OP.write_field_end()) foo
+    end;
+    OP.write_struct_end ();
+    OP.flush ();
+    (* reading the reply, later *)
+    let read_reply (module IP:PROTOCOL_READ) : fooK =
+      let _name, ty, seq_num' = IP.read_msg_begin () in
+      IP.read_msg_end();
+      assert (seq_num = seq_num');
+      (match ty with
+       | MSG_EXCEPTION ->
+         let continue = ref true in
+         let ty = ref None in
+         let msg = ref None in
+         while !continue do
+           match IP.read_field_begin () with
+           | exception Thrifty.Types.Read_stop_field -> continue := false
+           | ("type", T_I32, _) | (_, T_I32, 0) ->
+             ty := Some(IP.read_i32 ());
+           | ("type", _, _) | (_, _, 0) ->
+             raise (Runtime_error
+               (UE_invalid_protocol, {|invalid type for field (0: "type")|}))
+           | ("message", (T_STRING | T_BINARY), _) | (_, (T_STRING | T_BINARY), 1) ->
+             msg := Some(IP.read_string ());
+           | ("message", _, _) | (_, _, 1) ->
+             raise (Runtime_error
+               (UE_invalid_protocol,
+                {|invalid type for field (1: "message")|}))
+           | _ -> () (* unknown field *)
+         done;
+         assert false
+       | _ -> assert false)
+    in
+    (), read_reply
 
   let send_bar ?(bar:bar option) : _ client_outgoing_call =
     fun ~seq_num (module OP:PROTOCOL_WRITE) ->
     OP.write_msg_begin "send_bar" MSG_CALL seq_num;
     OP.write_msg_end();
-    assert false
+    (* write arguments *)
+    OP.write_struct_begin "send_bar";
+    begin
+      Option.iter
+        (fun x ->
+         OP.write_field_begin "bar" T_STRUCT 1;
+         write_bar (module OP) x;
+         OP.write_field_end()) bar
+    end;
+    OP.write_struct_end ();
+    OP.flush ();
+    (* reading the reply, later *)
+    let read_reply (module IP:PROTOCOL_READ) : unit =
+      let _name, ty, seq_num' = IP.read_msg_begin () in
+      IP.read_msg_end();
+      assert (seq_num = seq_num');
+      (match ty with
+       | MSG_EXCEPTION ->
+         let continue = ref true in
+         let ty = ref None in
+         let msg = ref None in
+         while !continue do
+           match IP.read_field_begin () with
+           | exception Thrifty.Types.Read_stop_field -> continue := false
+           | ("type", T_I32, _) | (_, T_I32, 0) ->
+             ty := Some(IP.read_i32 ());
+           | ("type", _, _) | (_, _, 0) ->
+             raise (Runtime_error
+               (UE_invalid_protocol, {|invalid type for field (0: "type")|}))
+           | ("message", (T_STRING | T_BINARY), _) | (_, (T_STRING | T_BINARY), 1) ->
+             msg := Some(IP.read_string ());
+           | ("message", _, _) | (_, _, 1) ->
+             raise (Runtime_error
+               (UE_invalid_protocol,
+                {|invalid type for field (1: "message")|}))
+           | _ -> () (* unknown field *)
+         done;
+         assert false
+       | _ -> assert false)
+    in
+    (), read_reply
 
   let send_whatev ~(how_many:int32)
       ?(k:fooK option) : client_outgoing_oneway =
     fun ~seq_num (module OP:PROTOCOL_WRITE) ->
     OP.write_msg_begin "send_whatev" MSG_ONEWAY seq_num;
     OP.write_msg_end();
-    assert false
+    (* write arguments *)
+    OP.write_struct_begin "send_whatev";
+    begin
+      begin
+        OP.write_field_begin "how_many" T_I32 1;
+        OP.write_i32 how_many;
+        OP.write_field_end();
+      end;
+      Option.iter
+        (fun x ->
+         OP.write_field_begin "k" T_STRUCT 3;
+         write_fooK (module OP) x;
+         OP.write_field_end()) k
+    end;
+    OP.write_struct_end ();
+    OP.flush ();
+    ()
 
 end
 
@@ -600,10 +699,10 @@ class virtual server_calculator = object (self)
   method name = "calculator"
 
   method virtual add :
-  x:int32-> y:int32 -> unit -> int32 server_outgoing_reply
+    x:int32-> y:int32 -> unit -> int32 server_outgoing_reply
 
   method virtual mult :
-  x:int32-> y:int32 -> unit -> int32 server_outgoing_reply
+    x:int32-> y:int32 -> unit -> int32 server_outgoing_reply
 
   (** Process an incoming message *)
   method process (ip:protocol_read) ~(reply:(protocol_write -> unit) -> unit) : unit =
@@ -676,7 +775,8 @@ class virtual server_calculator = object (self)
             OP.write_field_end();
           end;
           OP.write_field_stop();
-          OP.write_struct_end ()
+          OP.write_struct_end ();
+          OP.flush ()
         | Error exn ->
           raise (Runtime_error (UE_internal_error, (Printexc.to_string exn)))
        in
@@ -728,7 +828,8 @@ class virtual server_calculator = object (self)
             OP.write_field_end();
           end;
           OP.write_field_stop();
-          OP.write_struct_end ()
+          OP.write_struct_end ();
+          OP.flush ()
         | Error exn ->
           raise (Runtime_error (UE_internal_error, (Printexc.to_string exn)))
        in
@@ -754,13 +855,103 @@ end = struct
     fun ~seq_num (module OP:PROTOCOL_WRITE) ->
     OP.write_msg_begin "add" MSG_CALL seq_num;
     OP.write_msg_end();
-    assert false
+    (* write arguments *)
+    OP.write_struct_begin "add";
+    begin
+      begin
+        OP.write_field_begin "x" T_I32 1;
+        OP.write_i32 x;
+        OP.write_field_end();
+      end;
+      begin
+        OP.write_field_begin "y" T_I32 2;
+        OP.write_i32 y;
+        OP.write_field_end();
+      end
+    end;
+    OP.write_struct_end ();
+    OP.flush ();
+    (* reading the reply, later *)
+    let read_reply (module IP:PROTOCOL_READ) : int32 =
+      let _name, ty, seq_num' = IP.read_msg_begin () in
+      IP.read_msg_end();
+      assert (seq_num = seq_num');
+      (match ty with
+       | MSG_EXCEPTION ->
+         let continue = ref true in
+         let ty = ref None in
+         let msg = ref None in
+         while !continue do
+           match IP.read_field_begin () with
+           | exception Thrifty.Types.Read_stop_field -> continue := false
+           | ("type", T_I32, _) | (_, T_I32, 0) ->
+             ty := Some(IP.read_i32 ());
+           | ("type", _, _) | (_, _, 0) ->
+             raise (Runtime_error
+               (UE_invalid_protocol, {|invalid type for field (0: "type")|}))
+           | ("message", (T_STRING | T_BINARY), _) | (_, (T_STRING | T_BINARY), 1) ->
+             msg := Some(IP.read_string ());
+           | ("message", _, _) | (_, _, 1) ->
+             raise (Runtime_error
+               (UE_invalid_protocol,
+                {|invalid type for field (1: "message")|}))
+           | _ -> () (* unknown field *)
+         done;
+         assert false
+       | _ -> assert false)
+    in
+    (), read_reply
 
   let mult ~(x:int32) ~(y:int32) : _ client_outgoing_call =
     fun ~seq_num (module OP:PROTOCOL_WRITE) ->
     OP.write_msg_begin "mult" MSG_CALL seq_num;
     OP.write_msg_end();
-    assert false
+    (* write arguments *)
+    OP.write_struct_begin "mult";
+    begin
+      begin
+        OP.write_field_begin "x" T_I32 1;
+        OP.write_i32 x;
+        OP.write_field_end();
+      end;
+      begin
+        OP.write_field_begin "y" T_I32 2;
+        OP.write_i32 y;
+        OP.write_field_end();
+      end
+    end;
+    OP.write_struct_end ();
+    OP.flush ();
+    (* reading the reply, later *)
+    let read_reply (module IP:PROTOCOL_READ) : int32 =
+      let _name, ty, seq_num' = IP.read_msg_begin () in
+      IP.read_msg_end();
+      assert (seq_num = seq_num');
+      (match ty with
+       | MSG_EXCEPTION ->
+         let continue = ref true in
+         let ty = ref None in
+         let msg = ref None in
+         while !continue do
+           match IP.read_field_begin () with
+           | exception Thrifty.Types.Read_stop_field -> continue := false
+           | ("type", T_I32, _) | (_, T_I32, 0) ->
+             ty := Some(IP.read_i32 ());
+           | ("type", _, _) | (_, _, 0) ->
+             raise (Runtime_error
+               (UE_invalid_protocol, {|invalid type for field (0: "type")|}))
+           | ("message", (T_STRING | T_BINARY), _) | (_, (T_STRING | T_BINARY), 1) ->
+             msg := Some(IP.read_string ());
+           | ("message", _, _) | (_, _, 1) ->
+             raise (Runtime_error
+               (UE_invalid_protocol,
+                {|invalid type for field (1: "message")|}))
+           | _ -> () (* unknown field *)
+         done;
+         assert false
+       | _ -> assert false)
+    in
+    (), read_reply
 
 end
 

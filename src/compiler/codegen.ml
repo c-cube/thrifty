@@ -31,10 +31,13 @@ module CG : sig
 end = struct
   type fmt = Format.formatter
 
+  type full_field = int * A.Field.t * string
+  (** Field with mangled name + unique ID *)
+
   type t = {
     buf: Buffer.t;
     out: fmt;
-    exns: (string, (int * A.Field.t) list) Hashtbl.t;
+    exns: (string, full_field list) Hashtbl.t;
   }
 
   let fpf (self : fmt) fmt = Format.fprintf self fmt
@@ -68,8 +71,13 @@ end = struct
     fpf self.out "@.";
     Buffer.output_buffer oc self.buf
 
-  let mangle_name (s : string) : string = String.uncapitalize_ascii s
+  let mangle_name (s : string) : string =
+    match s with
+    | "type" -> "type_"
+    | s -> String.uncapitalize_ascii s
+
   let mangle_cstor (s : string) : string = String.capitalize_ascii s
+  let mangle_field (f : A.Field.t) : string = mangle_name f.name
 
   let rec pp_ty out (ty : A.Type.t) : unit =
     match ty.view with
@@ -131,15 +139,15 @@ end = struct
       (pp_const_value ~ty:(Some ty))
       value
 
-  (** Generate a printer {b expression} for [out (self:ty)] *)
-  let rec cg_printer_for_ty out (ty : A.Type.t) : unit =
+  (** Generate a printer {b expression} for [out (var:ty)] *)
+  let rec cg_printer_for_ty out ((var, ty) : string * A.Type.t) : unit =
     match ty.view with
-    | Named s -> fpf out "pp_%s out self" (mangle_name s)
+    | Named s -> fpf out "pp_%s out %s" (mangle_name s) var
     | List ty | Set ty ->
-      fpf out "pp_list@ %a@ out self" cg_printer_fun_for_ty ty
+      fpf out "pp_list@ %a@ out %s" cg_printer_fun_for_ty ty var
     | Map (ty1, ty2) ->
-      fpf out "pp_list@ (@[pp_pair@ %a@ %a@])@ out self" cg_printer_fun_for_ty
-        ty1 cg_printer_fun_for_ty ty2
+      fpf out "pp_list@ (@[pp_pair@ %a@ %a@])@ out %s" cg_printer_fun_for_ty ty1
+        cg_printer_fun_for_ty ty2 var
     | Base b ->
       let fmt =
         match b with
@@ -156,7 +164,7 @@ end = struct
           failwith
           @@ Format.asprintf "bad base type %s" (string_of_field_type b)
       in
-      fpf out "Format.fprintf out %S self" fmt
+      fpf out "Format.fprintf out %S %s" fmt var
 
   (** Generate a printer {b function} for this type *)
   and cg_printer_fun_for_ty out (ty : A.Type.t) =
@@ -166,7 +174,7 @@ end = struct
     | Map (ty1, ty2) ->
       fpf out "(@[pp_list@ (@[pp_pair@ %a@ %a@])@])" cg_printer_fun_for_ty ty1
         cg_printer_fun_for_ty ty2
-    | _ -> fpf out "(@[fun out self ->@ %a@])" cg_printer_for_ty ty
+    | _ -> fpf out "(@[fun out x ->@ %a@])" cg_printer_for_ty ("x", ty)
 
   let cg_write_field_ty_of_ty (ty : A.Type.t) =
     match ty.view with
@@ -310,9 +318,9 @@ end = struct
          <1 -2>end@]" f.name fty field_id cg_write_for_ty (var_name, f.ty)
     else
       fpf out
-        "(@[<v>match %s with@ | None -> ()@ | @[<v>Some x ->@ \
-         OP.write_field_begin %S %s %d;@ %a;@ OP.write_field_end()@]@])"
-        (mangle_name f.name) f.name fty field_id cg_write_for_ty ("x", f.ty)
+        "@[<v2>Option.iter@ (@[<hv>fun x ->@ OP.write_field_begin %S %s %d;@ \
+         %a;@ OP.write_field_end()@]@]) %s"
+        f.name fty field_id cg_write_for_ty ("x", f.ty) (mangle_name f.name)
 
   (* generate code to write fields into a [protocol_write].
      Each field is paired with its assigned field ID and the name
@@ -329,20 +337,19 @@ end = struct
     List.iteri write_field fs;
     fpf out "@;<1 -2>end@]"
 
-  (* read fields from [(module IP)], each field into a variable of the same
-     name as the field. Optional/default fields will be of option type. *)
-  let cg_read_fields out (fs : (int * A.Field.t) list) : unit =
-    let gen_var ((_, f) : _ * A.Field.t) : unit =
-      fpf out "let %s = ref %t in@ " (mangle_name f.name) (fun out ->
+  (* read fields from [(module IP)], each field into a variable with given
+     name.  Optional/default fields will be of option type. *)
+  let cg_read_fields out (fs : (int * A.Field.t * string) list) : unit =
+    let gen_var ((_, f, name) : _ * A.Field.t * string) : unit =
+      fpf out "let %s = ref %t in@ " name (fun out ->
           match f.default with
           | None -> fpf out "None"
           | Some v ->
             fpf out "(@[Some (%a)@])" (pp_const_value ~ty:(Some f.ty)) v)
-    and read_field ((field_id, f) : int * A.Field.t) =
+    and read_field ((field_id, f, name) : int * A.Field.t * string) =
       let ty_pat = cg_read_field_ty_of_ty f.ty in
       fpf out "| (%S, %s, _) | (_, %s, %d) ->@ " f.name ty_pat ty_pat field_id;
-      fpf out "  @[<2>%s :=@ Some(@[%a@])@];@ " (mangle_name f.name)
-        cg_read_for_ty f.ty;
+      fpf out "  @[<2>%s :=@ Some(@[%a@])@];@ " name cg_read_for_ty f.ty;
       fpf out "| (%S, _, _) | (_, _, %d) ->@ " f.name field_id;
       fpf out
         "  @[<2>raise (Runtime_error@ (@[UE_invalid_protocol,@ {|invalid type \
@@ -372,7 +379,7 @@ end = struct
       cg_read_for_ty ty;
     if pp then
       fpf self.out {|@.@[<2>let pp_%s out (self:%s) =@ %a@]@.|} name name
-        cg_printer_for_ty ty
+        cg_printer_for_ty ("self", ty)
 
   let cg_enum ~pp (self : t) name cases : unit =
     let name = mangle_name name in
@@ -443,7 +450,8 @@ end = struct
     ()
 
   (* pair fields with their field_id *)
-  let pair_with_field_id (fs : A.Field.t list) : (field_id * _) list =
+  let pair_with_field_id_and_name (fs : A.Field.t list) :
+      (field_id * _ * string) list =
     let cur_field = ref 1 in
     List.map
       (fun (f : A.Field.t) ->
@@ -458,14 +466,13 @@ end = struct
             cur_field := max !cur_field (i + 1);
             i
         in
-        f_id, f)
+        f_id, f, mangle_field f)
       fs
 
   (* read helper for a field: obtain a local variable named "foo" for
      field "foo", of optional type; if field is required, extract the option
      or else fail *)
-  let cg_read_extract_var_of_field out ((_fid, f) : int * A.Field.t) =
-    let fname = mangle_name f.name in
+  let cg_read_extract_var_of_field out ((_fid, f, fname) : full_field) =
     if A.Field.is_required f then (
       fpf out "@[<hv2>let %s = match !%s with@ " fname fname;
       fpf out
@@ -479,7 +486,7 @@ end = struct
   let cg_exception (self : t) exn_name (fields : A.Field.t list) : unit =
     let exn_name = mangle_cstor exn_name in
 
-    let fields_with_ids = pair_with_field_id fields in
+    let fields_with_ids = pair_with_field_id_and_name fields in
 
     let pp_field out (f : A.Field.t) =
       fpf out "%s: %a" (mangle_name f.name) pp_ty f.ty;
@@ -558,17 +565,19 @@ end = struct
       match k with
       | `Struct ->
         fpf out {|@ Format.fprintf out "{@@[";@ |};
-        List.iter
-          (fun (f : A.Field.t) ->
+        List.iteri
+          (fun i (f : A.Field.t) ->
+            if i > 0 then fpf self.out {|Format.fprintf out ";@@ ";@ |};
             let f_name = mangle_name f.name in
             if A.Field.is_required f then
-              fpf out {|@[<2>Format.fprintf out "%s=%%a"@ %a self.%s@];@ |}
-                f_name cg_printer_fun_for_ty f.ty f_name
+              fpf out {|@[<2>Format.fprintf out "%s=";@ %a@];@ |} f_name
+                cg_printer_for_ty
+                (spf "self.%s" f_name, f.ty)
             else
               fpf out
-                "(@[<v>match self.%s with@ | None -> ()@ | @[Some x ->@ \
-                 Format.fprintf out {|%s=%%a|}@ %a x@]@]);@ "
-                f_name f_name cg_printer_fun_for_ty f.ty)
+                "@[<hv2>Option.iter@ (@[fun x ->@ Format.fprintf out {|%s=|};@ \
+                 %a@])@ self.%s@];@ "
+                f.name cg_printer_for_ty ("x", f.ty) f_name)
           fields;
         fpf out {|Format.fprintf out "@@]}"|}
       | `Union ->
@@ -584,7 +593,7 @@ end = struct
 
     (* writer *)
     let cg_writer ~first out (name, k, fields) =
-      let fields_with_id = pair_with_field_id fields in
+      let full_fields = pair_with_field_id_and_name fields in
 
       if first then
         fpf out
@@ -598,10 +607,7 @@ end = struct
         fpf out "let {%s} = self in@ "
           (String.concat "; " @@ List.map A.Field.name fields);
         fpf out "OP.write_struct_begin %S;@ " name;
-        fpf out "%a;@ " cg_write_fields
-          (List.map
-             (fun (id, f) -> id, f, mangle_name f.A.Field.name)
-             fields_with_id);
+        fpf out "%a;@ " cg_write_fields full_fields;
         fpf out "OP.write_struct_end ()"
       | `Union ->
         (* check all fields are required *)
@@ -614,29 +620,20 @@ end = struct
         fpf out "OP.write_struct_begin %S;@ " name;
         fpf out "(@[<v>match self with";
         List.iter
-          (fun ((field_id, f) : field_id * A.Field.t) ->
+          (fun ((field_id, f, _) : field_id * A.Field.t * _) ->
             fpf out "@ | @[%s x ->@ %a@]" (mangle_cstor f.name) cg_write_field
               ("x", field_id, f))
-          fields_with_id;
-        fpf out "@]);";
+          full_fields;
+        fpf out "@]);@ ";
         fpf out "OP.write_struct_end ()";
         ()
-      (* TODO
-         List.iter
-           (fun (f : A.Field.t) ->
-             fpf out
-               {|@ | @[%s self ->@ Format.fprintf out "%s (%%a)"@ %a self@]|}
-               (mangle_cstor f.name) (mangle_cstor f.name) cg_printer_fun_for_ty
-               f.ty)
-           fields
-      *)
     in
     fpf self.out "@.(** Serialize *)@.";
     fpf self.out {|@[<v>@[<v2>%a@]@]@.|} (pp_l_and cg_writer) defs;
 
     (* reader *)
     let cg_reader ~first out (name, k, fields) =
-      let fields_with_id = pair_with_field_id fields in
+      let fields_with_id = pair_with_field_id_and_name fields in
 
       if first then
         fpf out "let rec read_%s (module IP:PROTOCOL_READ) : %s =@ " name name
@@ -679,8 +676,8 @@ end = struct
           fields;
 
         fpf out
-          "| _ -> raise (Runtime_error (UE_protocol_error, Printf.sprintf {|no \
-           field set for %S|}))@ "
+          "| @[_ ->@ raise (@[Runtime_error@ (@[UE_protocol_error,@ \
+           Printf.sprintf {|no field set for %S|}@])@])@]@ "
           name;
         fpf out "@])"
     in
@@ -717,11 +714,11 @@ end = struct
       in
 
       if f.oneway then
-        fpf self.out "@   @[method virtual %s :@ @[%a -> unit -> unit@]@]@ "
+        fpf self.out "@   @[<2>method virtual %s :@ @[%a -> unit -> unit@]@]@ "
           f_name (pp_l ~sep:"->" pp_arg) f.args
       else
         fpf self.out
-          "@   @[method virtual %s :@ @[%a -> unit -> %a \
+          "@   @[<2>method virtual %s :@ @[%a -> unit -> %a \
            server_outgoing_reply@]@]@ "
           f_name (pp_l ~sep:"->" pp_arg) f.args pp_fun_ty f.ty
     in
@@ -748,7 +745,8 @@ end = struct
       fpf self.out "OP.write_struct_begin {||};@ ";
       f ();
       fpf self.out "OP.write_field_stop();@ ";
-      fpf self.out "OP.write_struct_end ()"
+      fpf self.out "OP.write_struct_end ();@ ";
+      fpf self.out "OP.flush ()"
     in
 
     (* local helper:
@@ -784,7 +782,7 @@ end = struct
        ]
     *)
     let emit_fun_case (f : A.Function.t) =
-      let fields_with_id = pair_with_field_id f.args in
+      let fields_with_id = pair_with_field_id_and_name f.args in
       let m_ty =
         if f.oneway then (
           (match f.ty with
@@ -841,7 +839,7 @@ end = struct
 
         (* generate code for declared exception *)
         let cg_throw (exn_field : A.Field.t) : unit =
-          let exn_name, exn_fields_with_ids =
+          let exn_name, exn_full_fields =
             match exn_field.ty.view with
             | A.Type.Named n ->
               let name = mangle_cstor n in
@@ -861,18 +859,13 @@ end = struct
             | Some i -> i
           in
 
-          let exn_fs =
-            List.map
-              (fun (f_id, f) -> f_id, f, mangle_name f.A.Field.name)
-              exn_fields_with_ids
-          in
-
           (* match against exception *)
-          if exn_fs = [] then
+          if exn_full_fields = [] then
             fpf self.out "@ | @[<v>Error %s ->@ " exn_name
           else
             fpf self.out "@ | @[<v>exception (%s {%s}) ->@ " exn_name
-              (String.concat ";" @@ List.map (fun (_, _, n) -> n) exn_fs);
+              (String.concat ";"
+              @@ List.map (fun (_, _, n) -> n) exn_full_fields);
 
           (* write fields in a single-field struct *)
           cg_reply_success (fun () ->
@@ -880,8 +873,8 @@ end = struct
               fpf self.out "OP.write_field_begin {|%s|} T_STRUCT %d;@ "
                 (mangle_name exn_field.name)
                 exn_f_id;
-              if exn_fs <> [] then (
-                cg_write_fields self.out exn_fs;
+              if exn_full_fields <> [] then (
+                cg_write_fields self.out exn_full_fields;
                 fpf self.out ";@ "
               );
               fpf self.out "OP.write_field_stop();@ ";
@@ -977,18 +970,48 @@ end = struct
           "MSG_CALL");
       fpf self.out "OP.write_msg_end();@ ";
 
-      (*
-      if f.oneway then
-        fpf self.out "@   @[method virtual %s :@ @[%a -> unit -> unit@]@]@ "
-          f_name (pp_l ~sep:"->" pp_arg) f.args
-      else
-        fpf self.out
-          "@   @[method virtual %s :@ @[%a -> unit -> %a \
-           server_outgoing_reply@]@]@ "
-          f_name (pp_l ~sep:"->" pp_arg) f.args pp_fun_ty f.ty
-          *)
-      fpf self.out "assert false";
+      fpf self.out "(* write arguments *)@ ";
+      fpf self.out "OP.write_struct_begin %S;@ " f.name;
+      let full_args = pair_with_field_id_and_name f.args in
+      cg_write_fields self.out full_args;
+      fpf self.out ";@ ";
+      fpf self.out "OP.write_struct_end ();@ ";
+      fpf self.out "OP.flush ();@ ";
 
+      if f.oneway then
+        (* that's it, we don't expect any response *)
+        fpf self.out "()"
+      else (
+        fpf self.out "(* reading the reply, later *)@ ";
+        fpf self.out "@[<v2>let read_reply (module IP:PROTOCOL_READ) : %a =@ "
+          pp_fun_ty f.ty;
+
+        fpf self.out "let _name, ty, seq_num' = IP.read_msg_begin () in@ ";
+        fpf self.out "IP.read_msg_end();@ ";
+        fpf self.out "assert (seq_num = seq_num');@ ";
+
+        fpf self.out "(@[<v>match ty with";
+
+        fpf self.out "@ | @[<v>MSG_EXCEPTION ->@ ";
+        cg_read_fields self.out
+          [
+            0, A.Field.field_rpc_exn_type, "ty";
+            1, A.Field.field_rpc_exn_msg, "msg";
+          ];
+        fpf self.out "assert false";
+
+        fpf self.out "@]";
+
+        fpf self.out "@ | @[_ ->@ ";
+
+        fpf self.out "assert false@]";
+
+        fpf self.out "@])";
+
+        (* return the reader function *)
+        fpf self.out "@;<1 -2>in@]@ ";
+        fpf self.out "(), read_reply"
+      );
       fpf self.out "@]@ "
     in
 
@@ -1035,7 +1058,8 @@ end = struct
       fpf self.out "OP.write_struct_begin {||};@ ";
       f ();
       fpf self.out "OP.write_field_stop();@ ";
-      fpf self.out "OP.write_struct_end ()"
+      fpf self.out "OP.write_struct_end ();@ ";
+      fpf self.out "OP.flush ()"
     in
 
     (* local helper:
