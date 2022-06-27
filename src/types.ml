@@ -78,7 +78,21 @@ let int_of_unexpected_exception = function
   | UE_protocol_error -> 7l
   | UE_invalid_transform -> 8l
   | UE_invalid_protocol -> 9l
-  | UE_unsupported_client_type -> 1l
+  | UE_unsupported_client_type -> 10l
+
+let unexpected_exception_of_int = function
+  | 0l -> UE_unknown
+  | 1l -> UE_unknown_method
+  | 2l -> UE_invalid_message_type
+  | 3l -> UE_wrong_method_name
+  | 4l -> UE_bad_sequence_id
+  | 5l -> UE_missing_result
+  | 6l -> UE_internal_error
+  | 7l -> UE_protocol_error
+  | 8l -> UE_invalid_transform
+  | 9l -> UE_invalid_protocol
+  | 10l -> UE_unsupported_client_type
+  | _ -> UE_unknown
 
 exception Runtime_error of unexpected_exception * string
 

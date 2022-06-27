@@ -498,7 +498,6 @@ class virtual server_giveKind = object (self)
           OP.write_msg_begin {||} MSG_REPLY seq_num;
           OP.write_msg_end();
           OP.write_struct_begin {||};
-          reply @@ fun (module OP:PROTOCOL_WRITE) ->
           OP.write_field_begin {|o|} T_STRUCT 2;
           OP.write_field_stop();
           OP.write_field_end();
@@ -510,7 +509,6 @@ class virtual server_giveKind = object (self)
           OP.write_msg_begin {||} MSG_REPLY seq_num;
           OP.write_msg_end();
           OP.write_struct_begin {||};
-          reply @@ fun (module OP:PROTOCOL_WRITE) ->
           OP.write_field_begin {|o2|} T_STRUCT 3;
           begin
             Option.iter
@@ -595,30 +593,47 @@ end = struct
     let read_reply (module IP:PROTOCOL_READ) : fooK =
       let _name, ty, seq_num' = IP.read_msg_begin () in
       IP.read_msg_end();
-      assert (seq_num = seq_num');
-      (match ty with
-       | MSG_EXCEPTION ->
-         let continue = ref true in
-         let ty = ref None in
-         let msg = ref None in
-         while !continue do
-           match IP.read_field_begin () with
-           | exception Thrifty.Types.Read_stop_field -> continue := false
-           | ("type", T_I32, _) | (_, T_I32, 0) ->
-             ty := Some(IP.read_i32 ());
-           | ("type", _, _) | (_, _, 0) ->
-             raise (Runtime_error
-               (UE_invalid_protocol, {|invalid type for field (0: "type")|}))
-           | ("message", (T_STRING | T_BINARY), _) | (_, (T_STRING | T_BINARY), 1) ->
-             msg := Some(IP.read_string ());
-           | ("message", _, _) | (_, _, 1) ->
-             raise (Runtime_error
-               (UE_invalid_protocol,
-                {|invalid type for field (1: "message")|}))
-           | _ -> () (* unknown field *)
-         done;
-         assert false
-       | _ -> assert false)
+      if (seq_num <> seq_num') then
+        raise (Runtime_error (UE_bad_sequence_id, {||}));
+      match ty with
+      | MSG_REPLY ->
+        (* expected reply: success or declared exception *)
+        let (_:string) = IP.read_struct_begin () in
+        let _, ty, f_id =
+          try IP.read_field_begin ()
+          with Read_stop_field ->
+            raise (Runtime_error (UE_missing_result, {|expected a field|})) in
+        (match f_id with
+         | 0 -> let res = read_fooK (module IP)  in IP.read_struct_end(); res
+         | _ -> assert false)
+      | MSG_EXCEPTION ->
+        (* errors raised on the server side *)
+        let continue = ref true in
+        let ty = ref None in
+        let msg = ref None in
+        while !continue do
+          match IP.read_field_begin () with
+          | exception Thrifty.Types.Read_stop_field -> continue := false
+          | ("type", T_I32, _) | (_, T_I32, 0) ->
+            ty := Some(IP.read_i32 ());
+          | ("type", _, _) | (_, _, 0) ->
+            raise (Runtime_error
+              (UE_invalid_protocol, {|invalid type for field (0: "type")|}))
+          | ("message", (T_STRING | T_BINARY), _) | (_, (T_STRING | T_BINARY), 1) ->
+            msg := Some(IP.read_string ());
+          | ("message", _, _) | (_, _, 1) ->
+            raise (Runtime_error
+              (UE_invalid_protocol, {|invalid type for field (1: "message")|}))
+          | _ -> () (* unknown field *)
+        done;
+        let msg = Option.fold ~none:{||} ~some:(fun x->x) !msg in
+        let ue = match !ty with
+          | None -> UE_unknown
+          | Some ty -> unexpected_exception_of_int ty in
+        raise (Runtime_error (ue, msg))
+      | _ ->
+        raise (Runtime_error
+               (UE_invalid_protocol, {|expected reply or exception|}))
     in
     (), read_reply
 
@@ -641,30 +656,49 @@ end = struct
     let read_reply (module IP:PROTOCOL_READ) : unit =
       let _name, ty, seq_num' = IP.read_msg_begin () in
       IP.read_msg_end();
-      assert (seq_num = seq_num');
-      (match ty with
-       | MSG_EXCEPTION ->
-         let continue = ref true in
-         let ty = ref None in
-         let msg = ref None in
-         while !continue do
-           match IP.read_field_begin () with
-           | exception Thrifty.Types.Read_stop_field -> continue := false
-           | ("type", T_I32, _) | (_, T_I32, 0) ->
-             ty := Some(IP.read_i32 ());
-           | ("type", _, _) | (_, _, 0) ->
-             raise (Runtime_error
-               (UE_invalid_protocol, {|invalid type for field (0: "type")|}))
-           | ("message", (T_STRING | T_BINARY), _) | (_, (T_STRING | T_BINARY), 1) ->
-             msg := Some(IP.read_string ());
-           | ("message", _, _) | (_, _, 1) ->
-             raise (Runtime_error
-               (UE_invalid_protocol,
-                {|invalid type for field (1: "message")|}))
-           | _ -> () (* unknown field *)
-         done;
-         assert false
-       | _ -> assert false)
+      if (seq_num <> seq_num') then
+        raise (Runtime_error (UE_bad_sequence_id, {||}));
+      match ty with
+      | MSG_REPLY ->
+        (* expected reply: success or declared exception *)
+        let (_:string) = IP.read_struct_begin () in
+        (try
+           let _, ty, f_id =
+             try IP.read_field_begin ()
+             with Read_stop_field -> raise Exit in
+           (match f_id with
+            | 0 ->
+              raise (Runtime_error (UE_invalid_protocol, {|void method should have no return|}))
+            | _ -> assert false)
+         with Exit -> ())
+      | MSG_EXCEPTION ->
+        (* errors raised on the server side *)
+        let continue = ref true in
+        let ty = ref None in
+        let msg = ref None in
+        while !continue do
+          match IP.read_field_begin () with
+          | exception Thrifty.Types.Read_stop_field -> continue := false
+          | ("type", T_I32, _) | (_, T_I32, 0) ->
+            ty := Some(IP.read_i32 ());
+          | ("type", _, _) | (_, _, 0) ->
+            raise (Runtime_error
+              (UE_invalid_protocol, {|invalid type for field (0: "type")|}))
+          | ("message", (T_STRING | T_BINARY), _) | (_, (T_STRING | T_BINARY), 1) ->
+            msg := Some(IP.read_string ());
+          | ("message", _, _) | (_, _, 1) ->
+            raise (Runtime_error
+              (UE_invalid_protocol, {|invalid type for field (1: "message")|}))
+          | _ -> () (* unknown field *)
+        done;
+        let msg = Option.fold ~none:{||} ~some:(fun x->x) !msg in
+        let ue = match !ty with
+          | None -> UE_unknown
+          | Some ty -> unexpected_exception_of_int ty in
+        raise (Runtime_error (ue, msg))
+      | _ ->
+        raise (Runtime_error
+               (UE_invalid_protocol, {|expected reply or exception|}))
     in
     (), read_reply
 
@@ -875,30 +909,47 @@ end = struct
     let read_reply (module IP:PROTOCOL_READ) : int32 =
       let _name, ty, seq_num' = IP.read_msg_begin () in
       IP.read_msg_end();
-      assert (seq_num = seq_num');
-      (match ty with
-       | MSG_EXCEPTION ->
-         let continue = ref true in
-         let ty = ref None in
-         let msg = ref None in
-         while !continue do
-           match IP.read_field_begin () with
-           | exception Thrifty.Types.Read_stop_field -> continue := false
-           | ("type", T_I32, _) | (_, T_I32, 0) ->
-             ty := Some(IP.read_i32 ());
-           | ("type", _, _) | (_, _, 0) ->
-             raise (Runtime_error
-               (UE_invalid_protocol, {|invalid type for field (0: "type")|}))
-           | ("message", (T_STRING | T_BINARY), _) | (_, (T_STRING | T_BINARY), 1) ->
-             msg := Some(IP.read_string ());
-           | ("message", _, _) | (_, _, 1) ->
-             raise (Runtime_error
-               (UE_invalid_protocol,
-                {|invalid type for field (1: "message")|}))
-           | _ -> () (* unknown field *)
-         done;
-         assert false
-       | _ -> assert false)
+      if (seq_num <> seq_num') then
+        raise (Runtime_error (UE_bad_sequence_id, {||}));
+      match ty with
+      | MSG_REPLY ->
+        (* expected reply: success or declared exception *)
+        let (_:string) = IP.read_struct_begin () in
+        let _, ty, f_id =
+          try IP.read_field_begin ()
+          with Read_stop_field ->
+            raise (Runtime_error (UE_missing_result, {|expected a field|})) in
+        (match f_id with
+         | 0 -> let res = IP.read_i32 () in IP.read_struct_end(); res
+         | _ -> assert false)
+      | MSG_EXCEPTION ->
+        (* errors raised on the server side *)
+        let continue = ref true in
+        let ty = ref None in
+        let msg = ref None in
+        while !continue do
+          match IP.read_field_begin () with
+          | exception Thrifty.Types.Read_stop_field -> continue := false
+          | ("type", T_I32, _) | (_, T_I32, 0) ->
+            ty := Some(IP.read_i32 ());
+          | ("type", _, _) | (_, _, 0) ->
+            raise (Runtime_error
+              (UE_invalid_protocol, {|invalid type for field (0: "type")|}))
+          | ("message", (T_STRING | T_BINARY), _) | (_, (T_STRING | T_BINARY), 1) ->
+            msg := Some(IP.read_string ());
+          | ("message", _, _) | (_, _, 1) ->
+            raise (Runtime_error
+              (UE_invalid_protocol, {|invalid type for field (1: "message")|}))
+          | _ -> () (* unknown field *)
+        done;
+        let msg = Option.fold ~none:{||} ~some:(fun x->x) !msg in
+        let ue = match !ty with
+          | None -> UE_unknown
+          | Some ty -> unexpected_exception_of_int ty in
+        raise (Runtime_error (ue, msg))
+      | _ ->
+        raise (Runtime_error
+               (UE_invalid_protocol, {|expected reply or exception|}))
     in
     (), read_reply
 
@@ -926,30 +977,47 @@ end = struct
     let read_reply (module IP:PROTOCOL_READ) : int32 =
       let _name, ty, seq_num' = IP.read_msg_begin () in
       IP.read_msg_end();
-      assert (seq_num = seq_num');
-      (match ty with
-       | MSG_EXCEPTION ->
-         let continue = ref true in
-         let ty = ref None in
-         let msg = ref None in
-         while !continue do
-           match IP.read_field_begin () with
-           | exception Thrifty.Types.Read_stop_field -> continue := false
-           | ("type", T_I32, _) | (_, T_I32, 0) ->
-             ty := Some(IP.read_i32 ());
-           | ("type", _, _) | (_, _, 0) ->
-             raise (Runtime_error
-               (UE_invalid_protocol, {|invalid type for field (0: "type")|}))
-           | ("message", (T_STRING | T_BINARY), _) | (_, (T_STRING | T_BINARY), 1) ->
-             msg := Some(IP.read_string ());
-           | ("message", _, _) | (_, _, 1) ->
-             raise (Runtime_error
-               (UE_invalid_protocol,
-                {|invalid type for field (1: "message")|}))
-           | _ -> () (* unknown field *)
-         done;
-         assert false
-       | _ -> assert false)
+      if (seq_num <> seq_num') then
+        raise (Runtime_error (UE_bad_sequence_id, {||}));
+      match ty with
+      | MSG_REPLY ->
+        (* expected reply: success or declared exception *)
+        let (_:string) = IP.read_struct_begin () in
+        let _, ty, f_id =
+          try IP.read_field_begin ()
+          with Read_stop_field ->
+            raise (Runtime_error (UE_missing_result, {|expected a field|})) in
+        (match f_id with
+         | 0 -> let res = IP.read_i32 () in IP.read_struct_end(); res
+         | _ -> assert false)
+      | MSG_EXCEPTION ->
+        (* errors raised on the server side *)
+        let continue = ref true in
+        let ty = ref None in
+        let msg = ref None in
+        while !continue do
+          match IP.read_field_begin () with
+          | exception Thrifty.Types.Read_stop_field -> continue := false
+          | ("type", T_I32, _) | (_, T_I32, 0) ->
+            ty := Some(IP.read_i32 ());
+          | ("type", _, _) | (_, _, 0) ->
+            raise (Runtime_error
+              (UE_invalid_protocol, {|invalid type for field (0: "type")|}))
+          | ("message", (T_STRING | T_BINARY), _) | (_, (T_STRING | T_BINARY), 1) ->
+            msg := Some(IP.read_string ());
+          | ("message", _, _) | (_, _, 1) ->
+            raise (Runtime_error
+              (UE_invalid_protocol, {|invalid type for field (1: "message")|}))
+          | _ -> () (* unknown field *)
+        done;
+        let msg = Option.fold ~none:{||} ~some:(fun x->x) !msg in
+        let ue = match !ty with
+          | None -> UE_unknown
+          | Some ty -> unexpected_exception_of_int ty in
+        raise (Runtime_error (ue, msg))
+      | _ ->
+        raise (Runtime_error
+               (UE_invalid_protocol, {|expected reply or exception|}))
     in
     (), read_reply
 

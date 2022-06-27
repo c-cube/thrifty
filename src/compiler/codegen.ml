@@ -869,7 +869,6 @@ end = struct
 
           (* write fields in a single-field struct *)
           cg_reply_success (fun () ->
-              fpf self.out "reply @@@@ fun (module OP:PROTOCOL_WRITE) ->@ ";
               fpf self.out "OP.write_field_begin {|%s|} T_STRUCT %d;@ "
                 (mangle_name exn_field.name)
                 exn_f_id;
@@ -988,25 +987,86 @@ end = struct
 
         fpf self.out "let _name, ty, seq_num' = IP.read_msg_begin () in@ ";
         fpf self.out "IP.read_msg_end();@ ";
-        fpf self.out "assert (seq_num = seq_num');@ ";
+        fpf self.out
+          "@[<2>if (seq_num <> seq_num') then@ raise (@[Runtime_error \
+           (@[UE_bad_sequence_id, {||}@])@]);@]@ ";
 
-        fpf self.out "(@[<v>match ty with";
+        fpf self.out "@[<v>match ty with";
 
+        (* normal reply *)
+        fpf self.out "@ | @[<v>MSG_REPLY ->@ ";
+        fpf self.out "(* expected reply: success or declared exception *)@ ";
+
+        fpf self.out "let (_:string) = IP.read_struct_begin () in@ ";
+
+        let ret_void = A.Function_type.(Void = f.ty) in
+        (* if we return [()], we might be in a situation where no
+           field is read on success (but a field is read on a declared
+           thrown exception) *)
+        if ret_void then fpf self.out "(@[<v2>try@ ";
+
+        fpf self.out "@[<hv2>let _, ty, f_id =@ try IP.read_field_begin ()@ ";
+        if ret_void then
+          fpf self.out "with Read_stop_field -> raise Exit in@]@ "
+        else
+          fpf self.out
+            "@[<2>with Read_stop_field ->@ raise (@[Runtime_error \
+             (@[UE_missing_result,@ {|expected a field|}@])@])@] in@]@ ";
+
+        fpf self.out "(@[<v>match f_id with";
+
+        (* actual result *)
+        fpf self.out "@ | @[0 ->@ ";
+
+        (match f.ty with
+        | A.Function_type.Void ->
+          (* the field is not supposed to be there, raise *)
+          fpf self.out
+            "@[raise (@[Runtime_error (@[UE_invalid_protocol, {|void method \
+             should have no return|}@])@])@]@]"
+        | A.Function_type.Ty ty_ret ->
+          fpf self.out "let res = %a in@ " cg_read_for_ty ty_ret;
+
+          fpf self.out "IP.read_struct_end();@ ";
+
+          fpf self.out "res@]");
+
+        fpf self.out "@ | @[_ ->@ ";
+        fpf self.out "assert false@]";
+        (* TODO *)
+        fpf self.out "@])";
+
+        (* quick exit *)
+        if ret_void then
+          fpf self.out "@;<1 -2>with Exit -> ()@]@])"
+        else
+          fpf self.out "@]";
+
+        (* exception reply *)
         fpf self.out "@ | @[<v>MSG_EXCEPTION ->@ ";
+        fpf self.out "(* errors raised on the server side *)@ ";
         cg_read_fields self.out
           [
             0, A.Field.field_rpc_exn_type, "ty";
             1, A.Field.field_rpc_exn_msg, "msg";
           ];
-        fpf self.out "assert false";
-
+        fpf self.out
+          "let msg = Option.fold ~none:{||} ~some:(fun x->x) !msg in@ ";
+        fpf self.out
+          "@[<hv2>let ue = match !ty with@ | None -> UE_unknown@ | @[Some ty \
+           -> unexpected_exception_of_int ty@]@] in@ ";
+        fpf self.out "raise (Runtime_error (ue, msg))";
         fpf self.out "@]";
 
         fpf self.out "@ | @[_ ->@ ";
 
-        fpf self.out "assert false@]";
+        fpf self.out
+          "raise (@[Runtime_error@ (@[UE_invalid_protocol,@ {|expected reply \
+           or exception|}@])@])";
+        fpf self.out "@]";
 
-        fpf self.out "@])";
+        (* close match *)
+        fpf self.out "@]";
 
         (* return the reader function *)
         fpf self.out "@;<1 -2>in@]@ ";
