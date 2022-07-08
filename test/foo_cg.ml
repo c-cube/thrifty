@@ -605,7 +605,11 @@ end = struct
             raise (Runtime_error (UE_missing_result, {|expected a field|})) in
         (match f_id with
          | 0 -> let res = read_fooK (module IP)  in IP.read_struct_end(); res
-         | _ -> assert false)
+         | _id ->
+           raise
+            (Runtime_error
+              (UE_invalid_protocol,
+               Printf.sprintf {|unexpected error code %d|} _id)))
       | MSG_EXCEPTION ->
         (* errors raised on the server side *)
         let continue = ref true in
@@ -669,7 +673,29 @@ end = struct
            (match f_id with
             | 0 ->
               raise (Runtime_error (UE_invalid_protocol, {|void method should have no return|}))
-            | _ -> assert false)
+            | 2 ->
+              raise Ohno
+            | 3 ->
+              let continue = ref true in
+              let really_bad = ref None in
+              while !continue do
+                match IP.read_field_begin () with
+                | exception Thrifty.Types.Read_stop_field -> continue := false
+                | ("really_bad", T_BOOL, _) | (_, T_BOOL, 1) ->
+                  really_bad := Some(IP.read_bool ());
+                | ("really_bad", _, _) | (_, _, 1) ->
+                  raise (Runtime_error
+                    (UE_invalid_protocol,
+                     {|invalid type for field (1: "really_bad")|}))
+                | _ -> () (* unknown field *)
+              done;
+              let really_bad = !really_bad in
+              raise (Ohno2 {really_bad})
+            | _id ->
+              raise
+               (Runtime_error
+                 (UE_invalid_protocol,
+                  Printf.sprintf {|unexpected error code %d|} _id)))
          with Exit -> ())
       | MSG_EXCEPTION ->
         (* errors raised on the server side *)
@@ -921,7 +947,11 @@ end = struct
             raise (Runtime_error (UE_missing_result, {|expected a field|})) in
         (match f_id with
          | 0 -> let res = IP.read_i32 () in IP.read_struct_end(); res
-         | _ -> assert false)
+         | _id ->
+           raise
+            (Runtime_error
+              (UE_invalid_protocol,
+               Printf.sprintf {|unexpected error code %d|} _id)))
       | MSG_EXCEPTION ->
         (* errors raised on the server side *)
         let continue = ref true in
@@ -989,7 +1019,11 @@ end = struct
             raise (Runtime_error (UE_missing_result, {|expected a field|})) in
         (match f_id with
          | 0 -> let res = IP.read_i32 () in IP.read_struct_end(); res
-         | _ -> assert false)
+         | _id ->
+           raise
+            (Runtime_error
+              (UE_invalid_protocol,
+               Printf.sprintf {|unexpected error code %d|} _id)))
       | MSG_EXCEPTION ->
         (* errors raised on the server side *)
         let continue = ref true in
