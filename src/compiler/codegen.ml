@@ -608,6 +608,7 @@ end = struct
           (String.concat "; " @@ List.map A.Field.name fields);
         fpf out "OP.write_struct_begin %S;@ " name;
         fpf out "%a;@ " cg_write_fields full_fields;
+        fpf out "OP.write_field_stop ();@ ";
         fpf out "OP.write_struct_end ()"
       | `Union ->
         (* check all fields are required *)
@@ -625,6 +626,7 @@ end = struct
               ("x", field_id, f))
           full_fields;
         fpf out "@]);@ ";
+        fpf out "OP.write_field_stop ();@ ";
         fpf out "OP.write_struct_end ()";
         ()
     in
@@ -711,6 +713,8 @@ end = struct
     in
     exn_name, exn_full_fields, exn_f_id
 
+  let pp_arrow_if_non_empty out l = if l <> [] then fpf out " -> "
+
   let cg_service_server (self : t) name ~extends funs : unit =
     let name = mangle_name name in
 
@@ -738,13 +742,14 @@ end = struct
       in
 
       if f.oneway then
-        fpf self.out "@   @[<2>method virtual %s :@ @[%a -> unit -> unit@]@]@ "
-          f_name (pp_l ~sep:"->" pp_arg) f.args
+        fpf self.out "@   @[<2>method virtual %s :@ @[%a%a unit -> unit@]@]@ "
+          f_name (pp_l ~sep:"->" pp_arg) f.args pp_arrow_if_non_empty f.args
       else
         fpf self.out
-          "@   @[<2>method virtual %s :@ @[%a -> unit -> %a \
+          "@   @[<2>method virtual %s :@ @[%a%a unit -> %a \
            server_outgoing_reply@]@]@ "
-          f_name (pp_l ~sep:"->" pp_arg) f.args pp_fun_ty f.ty
+          f_name (pp_l ~sep:"->" pp_arg) f.args pp_arrow_if_non_empty f.args
+          pp_fun_ty f.ty
     in
 
     List.iter cg_method funs;
@@ -937,8 +942,8 @@ end = struct
         fpf out "%s%s:%a" lbl arg.name pp_ty arg.ty
       in
 
-      fpf self.out "@   @[<2>val %s :@ @[%a -> " f_name (pp_l ~sep:"->" pp_arg)
-        f.args;
+      fpf self.out "@   @[<2>val %s :@ @[%a%a " f_name (pp_l ~sep:"->" pp_arg)
+        f.args pp_arrow_if_non_empty f.args;
       if f.oneway then
         fpf self.out "client_outgoing_oneway@]@]@ "
       else
@@ -981,6 +986,7 @@ end = struct
       let full_args = pair_with_field_id_and_name f.args in
       cg_write_fields self.out full_args;
       fpf self.out ";@ ";
+      fpf self.out "OP.write_field_stop ();@ ";
       fpf self.out "OP.write_struct_end ();@ ";
       fpf self.out "OP.flush ();@ ";
 
