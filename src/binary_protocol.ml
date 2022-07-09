@@ -25,7 +25,7 @@ let field_ty_of_int = function
   | 13 -> T_MAP
   | 14 -> T_SET
   | 15 -> T_LIST
-  | _i -> failwith (Printf.sprintf "invalid type identifier %d" _i)
+  | _i -> failwith (Printf.sprintf "invalid type identifier: %d" _i)
 
 let int_of_element_type = int_of_field_ty
 let element_type_of_int = field_ty_of_int
