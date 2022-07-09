@@ -7,6 +7,7 @@ module Binary_protocol = Binary_protocol
 module Compact_protocol = Compact_protocol
 module Service_multiplex = Service_multiplex
 module Transfer = Transfer
+module Direct_call = Direct_call
 open Types
 
 (** Encode to string using a protocol and encoder.
