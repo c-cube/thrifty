@@ -1,7 +1,15 @@
 (tests
  (libraries thrifty containers)
  (flags :standard -open Thrifty -open Thrifty.Types)
- (names t1 t_binary_prot t_compact_prot foo_cg))
+ (names t1 t_binary_prot t_compact_prot foo_cg t_calculator))
+
+(rule
+ (targets calculator.ml)
+ (mode promote)
+ (deps
+  (:file calculator.thrift))
+ (action
+  (run ../src/compiler/thrifty_compiler.exe --pp %{file} -o %{targets})))
 
 (rule
  (targets foo_cg.ml)

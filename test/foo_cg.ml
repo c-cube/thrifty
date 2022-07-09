@@ -47,6 +47,7 @@ let rec write_foo (module OP:PROTOCOL_WRITE) (self:foo) : unit =
       OP.write_field_end();
     end
   end;
+  OP.write_field_stop ();
   OP.write_struct_end ()
 
 (** Deserialize *)
@@ -114,6 +115,7 @@ let rec write_loc (module OP:PROTOCOL_WRITE) (self:loc) : unit =
       OP.write_field_end();
     end
   end;
+  OP.write_field_stop ();
   OP.write_struct_end ()
 
 (** Deserialize *)
@@ -242,6 +244,7 @@ let rec write_bar (module OP:PROTOCOL_WRITE) (self:bar) : unit =
        write_fooK (module OP) x;
        OP.write_field_end()) kind
   end;
+  OP.write_field_stop ();
   OP.write_struct_end ()
 
 (** Deserialize *)
@@ -335,6 +338,7 @@ let rec write_fooOrBarOrBool (module OP:PROTOCOL_WRITE) (self:fooOrBarOrBool) : 
        OP.write_bool x;
        OP.write_field_end();
      end);
+  OP.write_field_stop ();
   OP.write_struct_end ()
 
 (** Deserialize *)
@@ -396,11 +400,11 @@ class virtual server_giveKind = object (self)
   inherit service_any
   method name = "giveKind"
 
-  method virtual get_kind : ?foo:foo -> unit -> fooK server_outgoing_reply
+  method virtual get_kind : ?foo:foo ->  unit -> fooK server_outgoing_reply
 
-  method virtual send_bar : ?bar:bar -> unit -> unit server_outgoing_reply
+  method virtual send_bar : ?bar:bar ->  unit -> unit server_outgoing_reply
 
-  method virtual send_whatev : how_many:int32-> ?k:fooK -> unit -> unit
+  method virtual send_whatev : how_many:int32-> ?k:fooK ->  unit -> unit
 
   (** Process an incoming message *)
   method process (ip:protocol_read) ~(reply:(protocol_write -> unit) -> unit) : unit =
@@ -566,11 +570,11 @@ end
 (** Client-side for service "giveKind" *)
 module Client_giveKind : sig
 
-  val get_kind : ?foo:foo -> fooK client_outgoing_call
+  val get_kind : ?foo:foo ->  fooK client_outgoing_call
 
-  val send_bar : ?bar:bar -> unit client_outgoing_call
+  val send_bar : ?bar:bar ->  unit client_outgoing_call
 
-  val send_whatev : how_many:int32-> ?k:fooK -> client_outgoing_oneway
+  val send_whatev : how_many:int32-> ?k:fooK ->  client_outgoing_oneway
 
 end = struct
 
@@ -587,6 +591,7 @@ end = struct
          write_foo (module OP) x;
          OP.write_field_end()) foo
     end;
+    OP.write_field_stop ();
     OP.write_struct_end ();
     OP.flush ();
     (* reading the reply, later *)
@@ -654,6 +659,7 @@ end = struct
          write_bar (module OP) x;
          OP.write_field_end()) bar
     end;
+    OP.write_field_stop ();
     OP.write_struct_end ();
     OP.flush ();
     (* reading the reply, later *)
@@ -747,6 +753,7 @@ end = struct
          write_fooK (module OP) x;
          OP.write_field_end()) k
     end;
+    OP.write_field_stop ();
     OP.write_struct_end ();
     OP.flush ();
     ()
@@ -759,10 +766,10 @@ class virtual server_calculator = object (self)
   method name = "calculator"
 
   method virtual add :
-    x:int32-> y:int32 -> unit -> int32 server_outgoing_reply
+    x:int32-> y:int32 ->  unit -> int32 server_outgoing_reply
 
   method virtual mult :
-    x:int32-> y:int32 -> unit -> int32 server_outgoing_reply
+    x:int32-> y:int32 ->  unit -> int32 server_outgoing_reply
 
   (** Process an incoming message *)
   method process (ip:protocol_read) ~(reply:(protocol_write -> unit) -> unit) : unit =
@@ -905,9 +912,9 @@ end
 (** Client-side for service "calculator" *)
 module Client_calculator : sig
 
-  val add : x:int32-> y:int32 -> int32 client_outgoing_call
+  val add : x:int32-> y:int32 ->  int32 client_outgoing_call
 
-  val mult : x:int32-> y:int32 -> int32 client_outgoing_call
+  val mult : x:int32-> y:int32 ->  int32 client_outgoing_call
 
 end = struct
 
@@ -929,6 +936,7 @@ end = struct
         OP.write_field_end();
       end
     end;
+    OP.write_field_stop ();
     OP.write_struct_end ();
     OP.flush ();
     (* reading the reply, later *)
@@ -1001,6 +1009,7 @@ end = struct
         OP.write_field_end();
       end
     end;
+    OP.write_field_stop ();
     OP.write_struct_end ();
     OP.flush ();
     (* reading the reply, later *)
