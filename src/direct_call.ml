@@ -14,13 +14,13 @@ let call_with_reply (s : service_any) (c : 'a client_outgoing_call) : 'a =
   let (), read_reply = c ~seq_num w in
   let call_str = Buffer.contents buf in
   Buffer.clear buf;
-  Format.printf "call: %S@." call_str;
+  (*Format.printf "call: %S@." call_str;*)
   (* call service *)
   s#process
     (Binary_protocol.read @@ BT.transport_of_string call_str)
     ~reply:(fun f -> f w);
   let reply_str = Buffer.contents buf in
-  Format.printf "reply: %S@." call_str;
+  (*Format.printf "reply: %S@." call_str;*)
   let res =
     read_reply (Binary_protocol.read @@ BT.transport_of_string reply_str)
   in
