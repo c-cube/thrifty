@@ -4,7 +4,7 @@
  (names t1 t_binary_prot t_compact_prot foo_cg t_calculator))
 
 (rule
- (targets calculator.ml)
+ (targets calculator_cg.ml)
  (mode promote)
  (deps
   (:file calculator.thrift))

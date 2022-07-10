@@ -1,4 +1,5 @@
 module Fmt = CCFormat
+module Calc_client = Calculator_cg.Client_s
 
 let () = Printexc.record_backtrace true
 
@@ -24,7 +25,7 @@ let calc = (new calculator :> service_any)
 
 let () =
   Fmt.printf "%ld + %ld = %ld@." 3l 5l
-    (Direct_call.call_with_reply calc @@ Calculator.Client_s.add ~a:3l ~b:5l)
+    (Direct_call.call_with_reply calc @@ Calc_client.add ~a:3l ~b:5l)
 
 let () =
   let l = CCList.init 100 Int32.of_int in
@@ -35,14 +36,14 @@ let () =
     @@ Calculator.(Client_s.add_all ~l:{ ints = l }))
 
 let () =
-  let p = Direct_call.call_with_reply calc @@ Calculator.Client_s.get_pings in
+  let p = Direct_call.call_with_reply calc @@ Calc_client.get_pings in
   assert (p = 0l);
-  Direct_call.call_oneway calc Calculator.Client_s.ping;
-  Direct_call.call_oneway calc Calculator.Client_s.ping;
-  let p = Direct_call.call_with_reply calc @@ Calculator.Client_s.get_pings in
+  Direct_call.call_oneway calc Calc_client.ping;
+  Direct_call.call_oneway calc Calc_client.ping;
+  let p = Direct_call.call_with_reply calc @@ Calc_client.get_pings in
   assert (p = 2l);
-  Direct_call.call_oneway calc Calculator.Client_s.ping;
-  let p = Direct_call.call_with_reply calc @@ Calculator.Client_s.get_pings in
+  Direct_call.call_oneway calc Calc_client.ping;
+  let p = Direct_call.call_with_reply calc @@ Calc_client.get_pings in
   assert (p = 3l);
   Fmt.printf "pings: %ld@." p;
   ()
