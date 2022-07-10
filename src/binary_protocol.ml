@@ -200,24 +200,24 @@ let read (tr : transport_read) : protocol_read =
       let ty_k = element_type_of_int ty_k in
       let ty_v = Char.code @@ Tr.read_byte () in
       let ty_v = element_type_of_int ty_v in
-      let sz = read_i16 () in
-      ty_k, ty_v, sz
+      let sz = read_i32 () in
+      ty_k, ty_v, Int32.to_int sz
 
     let read_map_end () = ()
 
     let read_list_begin () : element_type * size =
       let ty = Char.code @@ Tr.read_byte () in
       let ty = element_type_of_int ty in
-      let sz = read_i16 () in
-      ty, sz
+      let sz = read_i32 () in
+      ty, Int32.to_int sz
 
     let read_list_end () = ()
 
     let read_set_begin () : element_type * size =
       let ty = Char.code @@ Tr.read_byte () in
       let ty = element_type_of_int ty in
-      let sz = read_i16 () in
-      ty, sz
+      let sz = read_i32 () in
+      ty, Int32.to_int sz
 
     let read_set_end () = ()
   end in
