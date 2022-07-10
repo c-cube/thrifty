@@ -7,3 +7,13 @@ transfer to debug protocol
 tokens: [msg_begin("hello",MSG_ONEWAY,seq=42);msg_end;struct_begin("");
          field_begin("",I32,1);17l;field_end;field_begin("",BINARY,2);
          binary("hello");field_end;field_stop;struct_end]
+transfer to debug protocol
+tokens: [struct_begin("");field_begin("",STRUCT,1);struct_begin("");
+         field_begin("",LIST,4);list_begin(100,I32);1l;2l;3l;4l;5l;6l;7l;8l;
+         9l;10l;11l;12l;13l;14l;15l;16l;17l;18l;19l;20l;21l;22l;23l;24l;25l;
+         26l;27l;28l;29l;30l;31l;32l;33l;34l;35l;36l;37l;38l;39l;40l;41l;42l;
+         43l;44l;45l;46l;47l;48l;49l;50l;51l;52l;53l;54l;55l;56l;57l;58l;59l;
+         60l;61l;62l;63l;64l;65l;66l;67l;68l;69l;70l;71l;72l;73l;74l;75l;76l;
+         77l;78l;79l;80l;81l;82l;83l;84l;85l;86l;87l;88l;89l;90l;91l;92l;93l;
+         94l;95l;96l;97l;98l;99l;100l;list_end;field_end;field_stop;
+         struct_end;field_end;field_stop;struct_end]

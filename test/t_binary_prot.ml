@@ -72,3 +72,37 @@ let () =
   Fmt.printf "tokens: %a@."
     (Fmt.Dump.list Debug_protocol.Token.pp)
     (get_toks ())
+
+(* write {1:struct {4:list [1..100]}} *)
+let () =
+  Buffer.clear buf;
+  let (module P) = proto_write in
+  P.write_struct_begin "A";
+  P.write_field_begin "x" T_STRUCT 1;
+  P.write_struct_begin "ints";
+  P.write_field_begin "ints" T_LIST 4;
+  P.write_list_begin T_I32 100;
+  for i = 1 to 100 do
+    P.write_i32 (Int32.of_int i)
+  done;
+  P.write_list_end ();
+  P.write_field_stop ();
+  P.write_struct_end ();
+  P.write_field_end ();
+  P.write_field_stop ();
+  P.write_struct_end ();
+  ()
+
+let data = Buffer.contents buf
+
+let proto_read =
+  Binary_protocol.read (Basic_transports.transport_of_string data)
+
+let get_toks, prot_debug = Debug_protocol.debug_write ()
+
+let () =
+  Format.printf "transfer to debug protocol@.";
+  Transfer.transfer_struct proto_read prot_debug;
+  Fmt.printf "tokens: %a@."
+    (Fmt.Dump.list Debug_protocol.Token.pp)
+    (get_toks ())

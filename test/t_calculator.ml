@@ -33,3 +33,16 @@ let () =
     l
     (Direct_call.call_with_reply calc
     @@ Calculator.(Client_s.add_all ~l:{ ints = l }))
+
+let () =
+  let p = Direct_call.call_with_reply calc @@ Calculator.Client_s.get_pings in
+  assert (p = 0l);
+  Direct_call.call_oneway calc Calculator.Client_s.ping;
+  Direct_call.call_oneway calc Calculator.Client_s.ping;
+  let p = Direct_call.call_with_reply calc @@ Calculator.Client_s.get_pings in
+  assert (p = 2l);
+  Direct_call.call_oneway calc Calculator.Client_s.ping;
+  let p = Direct_call.call_with_reply calc @@ Calculator.Client_s.get_pings in
+  assert (p = 3l);
+  Fmt.printf "pings: %ld@." p;
+  ()
