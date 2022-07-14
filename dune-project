@@ -18,6 +18,7 @@
  (depends
   (ocaml
    (>= 4.08))
+  (qcheck-core :with-test)
   dune)
  (tags
   (topics thrift rpc serialization)))

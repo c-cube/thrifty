@@ -10,6 +10,7 @@ homepage: "https://github.com/c-cube/thrifty"
 bug-reports: "https://github.com/c-cube/thrifty/issues"
 depends: [
   "ocaml" {>= "4.08"}
+  "qcheck-core" {with-test}
   "dune"
 ]
 build: [

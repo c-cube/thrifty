@@ -106,6 +106,45 @@ type sequence_number = int
 (** Sequence number of a message on the wire. It should be unique in
   a given client/server pair. *)
 
+(** {2 Transports}
+
+    a Transport is concerned with moving bytes from a place to another,
+    and possibly handle framing, authentication, etc. It does not care
+    what is contained in these bytes. *)
+
+module type TRANSPORT_READ = sig
+  val is_closed : unit -> bool
+  val close : unit -> unit
+  val read_byte : unit -> char
+  val read : bytes -> int -> int -> int
+end
+
+type transport_read = (module TRANSPORT_READ)
+(** Transport to read values *)
+
+(** Really read [n] bytes into [b] at offset [i].
+     @raise End_of_file if the input is exhausted first. *)
+let really_read ((module R) : transport_read) b i n : unit =
+  let i = ref i in
+  let n = ref n in
+  while !n > 0 do
+    let len = R.read b !i !n in
+    if len = 0 then raise End_of_file;
+    i := !i + len;
+    n := !n - len
+  done
+
+(** Transport to emit values *)
+module type TRANSPORT_WRITE = sig
+  val is_closed : unit -> bool
+  val close : unit -> unit
+  val write_byte : char -> unit
+  val write : bytes -> int -> int -> unit
+  val flush : unit -> unit
+end
+
+type transport_write = (module TRANSPORT_WRITE)
+
 (** {2 Protocols}
 
     A protocol is a particular encoding/decoding format that specifies
@@ -182,44 +221,13 @@ end
 
 type protocol_read = (module PROTOCOL_READ)
 
-(** {2 Transports}
-
-    a Transport is concerned with moving bytes from a place to another,
-    and possibly handle framing, authentication, etc. It does not care
-    what is contained in these bytes. *)
-
-module type TRANSPORT_READ = sig
-  val is_closed : unit -> bool
-  val close : unit -> unit
-  val read_byte : unit -> char
-  val read : bytes -> int -> int -> int
+(** A pair of read and write builders for a given protocol *)
+module type PROTOCOL = sig
+  val read : transport_read -> protocol_read
+  val write : transport_write -> protocol_write
 end
 
-type transport_read = (module TRANSPORT_READ)
-(** Transport to read values *)
-
-(** Really read [n] bytes into [b] at offset [i].
-     @raise End_of_file if the input is exhausted first. *)
-let really_read ((module R) : transport_read) b i n : unit =
-  let i = ref i in
-  let n = ref n in
-  while !n > 0 do
-    let len = R.read b !i !n in
-    if len = 0 then raise End_of_file;
-    i := !i + len;
-    n := !n - len
-  done
-
-(** Transport to emit values *)
-module type TRANSPORT_WRITE = sig
-  val is_closed : unit -> bool
-  val close : unit -> unit
-  val write_byte : char -> unit
-  val write : bytes -> int -> int -> unit
-  val flush : unit -> unit
-end
-
-type transport_write = (module TRANSPORT_WRITE)
+type protocol = (module PROTOCOL)
 
 (** {2 Service-related types} *)
 
@@ -244,7 +252,7 @@ class virtual service_any =
         : protocol_read -> reply:((protocol_write -> unit) -> unit) -> unit
     (** Process a message. The function is given a [reply] callback
         that it can call when the response is ready. This allows the
-        implementation to use a thread pool or an asynchronous framework
+        implementation to use a thread pool or an asynchronous framework.
 
         This might be provided with a different pair of protocols
         every time it is called. *)

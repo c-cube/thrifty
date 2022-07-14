@@ -297,6 +297,4 @@ module Value = struct
     let open Token in
     [ T_msg_begin (self.name, self.ty, self.seq_num); T_msg_end ]
     @ to_tok_list (V_struct self.s)
-
-  (* TODO: of_tok_list *)
 end
