@@ -1,0 +1,5 @@
+(library
+ (name thrifty_lwt)
+ (public_name thrifty-lwt)
+ (flags :standard -open Thrifty.Types)
+ (libraries thrifty lwt lwt.unix))

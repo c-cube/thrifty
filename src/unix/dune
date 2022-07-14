@@ -1,0 +1,5 @@
+(library
+ (name thrifty_unix)
+ (public_name thrifty.unix)
+ (flags :standard -open Thrifty.Types)
+ (libraries thrifty unix threads))

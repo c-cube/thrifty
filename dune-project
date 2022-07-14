@@ -20,8 +20,21 @@
    (>= 4.08))
   (qcheck-core :with-test)
   dune)
+ (depopts base-unix)
  (tags
   (topics thrift rpc serialization)))
+
+(package
+ (name thrifty-lwt)
+ (synopsis "Runtime library for Thrifty with Lwt for concurrency")
+ (depends
+  (ocaml
+   (>= 4.08))
+  (qcheck-core :with-test)
+  lwt
+  dune)
+ (tags
+  (topics thrift rpc serialization lwt)))
 
 (package
  (name thrifty_compiler)
