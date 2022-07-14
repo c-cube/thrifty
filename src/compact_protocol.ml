@@ -332,3 +332,9 @@ let read (tr : transport_read) : protocol_read =
     let read_map_end () = ()
   end in
   (module M)
+
+let protocol : protocol =
+  (module struct
+    let read = read
+    let write = write
+  end)
