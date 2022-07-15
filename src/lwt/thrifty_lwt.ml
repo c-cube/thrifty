@@ -138,6 +138,7 @@ end = struct
         (Proto.write @@ Thrifty.Basic_transports.transport_of_buffer self.buf)
     in
 
+    (* setup timeout *)
     Option.iter
       (fun t ->
         Lwt.async (fun () ->

@@ -4,6 +4,15 @@ open Lwt.Syntax
 let debug = ref false
 let delay = ref 0.2
 let () = Printexc.record_backtrace true
+let rand = Random.State.make_self_init ()
+
+let with_delay f =
+  let noise = Random.State.float rand (!delay /. 10.) in
+  let d = !delay +. (noise -. (!delay /. 20.)) in
+  Lwt.async (fun () ->
+      if !debug then Printf.eprintf "sleep %.4fs\n%!" d;
+      let+ () = Lwt_unix.sleep d in
+      f ())
 
 class calculator =
   object
@@ -17,14 +26,11 @@ class calculator =
 
     method add ~a ~b () ~reply =
       if !debug then Printf.eprintf "add %ld+%ld\n%!" a b;
-      Lwt.async (fun () ->
-          let+ () = Lwt_unix.sleep !delay in
-          reply (Ok (Int32.add a b)))
+      with_delay (fun () -> reply (Ok (Int32.add a b)))
 
     method div ~a ~b () ~reply =
       if !debug then Printf.eprintf "div %ld/%ld\n%!" a b;
-      Lwt.async (fun () ->
-          let+ () = Lwt_unix.sleep !delay in
+      with_delay (fun () ->
           if b = 0l then
             reply (Error Calculator.Div_by_zero)
           else
@@ -34,9 +40,7 @@ class calculator =
       if !debug then Printf.eprintf "add all\n%!";
       let s = ref 0l in
       List.iter (fun x -> s := Int32.add x !s) l.ints;
-      Lwt.async (fun () ->
-          let+ () = Lwt_unix.sleep !delay in
-          reply (Ok !s))
+      with_delay (fun () -> reply (Ok !s))
   end
 
 let calc = (new calculator :> service_any)

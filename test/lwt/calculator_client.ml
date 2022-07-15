@@ -36,5 +36,7 @@ let () =
          (String.concat ";" @@ List.map Int32.to_string l)
      in
 
+     assert (l = List.init 50 (fun i -> Int32.of_int @@ (i * 2)));
+
      let* () = Lwt_io.printl "done" in
      Lwt.return ()
