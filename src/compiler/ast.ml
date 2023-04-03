@@ -30,7 +30,6 @@ type identifier = string
 module Metadata = struct
   type key = identifier
   type value = string (* literal *)
-
   type t = (key * value) list
 
   let pp out (self : t) =

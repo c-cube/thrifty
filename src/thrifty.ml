@@ -33,6 +33,4 @@ let read_from_string ?(protocol = Binary_protocol.read)
   let x = dec ip in
   x
 
-(* TODO: a forwarder from protocol_read to protocol_write *)
-
 (* TODO: a unix interface with TCP client/server *)
