@@ -112,38 +112,40 @@ type sequence_number = int
     and possibly handle framing, authentication, etc. It does not care
     what is contained in these bytes. *)
 
-module type TRANSPORT_READ = sig
-  val is_closed : unit -> bool
-  val close : unit -> unit
-  val read_byte : unit -> char
-  val read : bytes -> int -> int -> int
-end
+type 'st transport_read = {
+  is_closed: 'st -> bool;
+  close: 'st -> unit;
+  read_byte: 'st -> char;
+  read: 'st -> bytes -> int -> int -> int;
+}
+(** Transport to read a stream of bytes *)
 
-type transport_read = (module TRANSPORT_READ)
-(** Transport to read values *)
+type transport_read_any =
+  | TR_read : 'st transport_read * 'st -> transport_read_any
 
 (** Really read [n] bytes into [b] at offset [i].
      @raise End_of_file if the input is exhausted first. *)
-let really_read ((module R) : transport_read) b i n : unit =
+let really_read (tr : _ transport_read) read b i n : unit =
   let i = ref i in
   let n = ref n in
   while !n > 0 do
-    let len = R.read b !i !n in
+    let len = tr.read read b !i !n in
     if len = 0 then raise End_of_file;
     i := !i + len;
     n := !n - len
   done
 
+type 'st transport_write = {
+  is_closed: 'st -> bool;
+  close: 'st -> unit;
+  write_byte: 'st -> char -> unit;
+  write: 'st -> bytes -> int -> int -> unit;
+  flush: 'st -> unit;
+}
 (** Transport to emit values *)
-module type TRANSPORT_WRITE = sig
-  val is_closed : unit -> bool
-  val close : unit -> unit
-  val write_byte : char -> unit
-  val write : bytes -> int -> int -> unit
-  val flush : unit -> unit
-end
 
-type transport_write = (module TRANSPORT_WRITE)
+type transport_write_any =
+  | TR_write : 'st transport_write * 'st -> transport_write_any
 
 (** {2 Protocols}
 
@@ -155,84 +157,79 @@ type transport_write = (module TRANSPORT_WRITE)
     picking a different protocol.
 *)
 
+type 'st protocol_write = {
+  write_msg_begin: 'st -> string -> message_type -> sequence_number -> unit;
+  write_msg_end: 'st -> unit;
+  write_struct_begin: 'st -> string -> unit;
+  write_struct_end: 'st -> unit;
+  write_field_begin: 'st -> string -> field_type -> field_id -> unit;
+  write_field_end: 'st -> unit;
+  write_field_stop: 'st -> unit;
+      (** Indicate that the struct is done, no more fields will be added to it *)
+  write_map_begin: 'st -> field_type -> field_type -> size -> unit;
+  write_map_end: 'st -> unit;
+  write_list_begin: 'st -> field_type -> size -> unit;
+  write_list_end: 'st -> unit;
+  write_set_begin: 'st -> field_type -> size -> unit;
+  write_set_end: 'st -> unit;
+  write_bool: 'st -> bool -> unit;
+  write_byte: 'st -> char -> unit;
+  write_i16: 'st -> int -> unit;
+  write_i32: 'st -> int32 -> unit;
+  write_i64: 'st -> int64 -> unit;
+  write_double: 'st -> float -> unit;
+  write_string: 'st -> string -> unit;
+  write_binary: 'st -> string -> unit;
+  flush: 'st -> unit;  (** Flush underlying transport *)
+}
 (** Protocol to write messages *)
-module type PROTOCOL_WRITE = sig
-  val write_msg_begin : string -> message_type -> sequence_number -> unit
-  val write_msg_end : unit -> unit
-  val write_struct_begin : string -> unit
-  val write_struct_end : unit -> unit
-  val write_field_begin : string -> field_type -> field_id -> unit
-  val write_field_end : unit -> unit
 
-  val write_field_stop : unit -> unit
-  (** Indicate that the struct is done, no more fields will be added to it *)
-
-  val write_map_begin : field_type -> field_type -> size -> unit
-  val write_map_end : unit -> unit
-  val write_list_begin : field_type -> size -> unit
-  val write_list_end : unit -> unit
-  val write_set_begin : field_type -> size -> unit
-  val write_set_end : unit -> unit
-  val write_bool : bool -> unit
-  val write_byte : char -> unit
-  val write_i16 : int -> unit
-  val write_i32 : int32 -> unit
-  val write_i64 : int64 -> unit
-  val write_double : float -> unit
-  val write_string : string -> unit
-  val write_binary : string -> unit
-
-  val flush : unit -> unit
-  (** Flush underlying transport *)
-end
-
-type protocol_write = (module PROTOCOL_WRITE)
+type protocol_write_any =
+  | PR_write : 'a protocol_write * 'a -> protocol_write_any
 
 exception Read_stop_field
 
-(** Protocol to read messages *)
-module type PROTOCOL_READ = sig
-  val read_msg_begin : unit -> string * message_type * sequence_number
-  val read_msg_end : unit -> unit
-  val read_struct_begin : unit -> string
-  val read_struct_end : unit -> unit
-
-  val read_field_begin : unit -> string * field_type * field_id
-  (** Read the next field.
+type 'st protocol_read = {
+  read_msg_begin: 'st -> string * message_type * sequence_number;
+  read_msg_end: 'st -> unit;
+  read_struct_begin: 'st -> string;
+  read_struct_end: 'st -> unit;
+  read_field_begin: 'st -> string * field_type * field_id;
+      (** Read the next field.
         @raise Read_stop_field if there are no more fields to be read in
         that struct/exception/message *)
+  read_field_end: 'st -> unit;
+  read_map_begin: 'st -> element_type * element_type * size;
+  read_map_end: 'st -> unit;
+  read_list_begin: 'st -> element_type * size;
+  read_list_end: 'st -> unit;
+  read_set_begin: 'st -> element_type * size;
+  read_set_end: 'st -> unit;
+  read_bool: 'st -> bool;
+  read_byte: 'st -> char;
+  read_i16: 'st -> int;
+  read_i32: 'st -> int32;
+  read_i64: 'st -> int64;
+  read_double: 'st -> float;
+  read_string: 'st -> string;
+  read_binary: 'st -> string;
+}
+(** Protocol to read messages *)
 
-  val read_field_end : unit -> unit
-  val read_map_begin : unit -> element_type * element_type * size
-  val read_map_end : unit -> unit
-  val read_list_begin : unit -> element_type * size
-  val read_list_end : unit -> unit
-  val read_set_begin : unit -> element_type * size
-  val read_set_end : unit -> unit
-  val read_bool : unit -> bool
-  val read_byte : unit -> char
-  val read_i16 : unit -> int
-  val read_i32 : unit -> int32
-  val read_i64 : unit -> int64
-  val read_double : unit -> float
-  val read_string : unit -> string
-  val read_binary : unit -> string
-end
+type protocol_read_any = PR_read : 'a protocol_read * 'a -> protocol_read_any
 
-type protocol_read = (module PROTOCOL_READ)
-
+type protocol = {
+  read: 'read. 'read transport_read -> 'read protocol_read;
+  write: 'write. 'write transport_write -> 'write protocol_write;
+}
 (** A pair of read and write builders for a given protocol *)
-module type PROTOCOL = sig
-  val read : transport_read -> protocol_read
-  val write : transport_write -> protocol_write
-end
-
-type protocol = (module PROTOCOL)
 
 (** {2 Service-related types} *)
 
 type 'res client_outgoing_call =
-  seq_num:sequence_number -> protocol_write -> unit * (protocol_read -> 'res)
+  seq_num:sequence_number ->
+  protocol_write_any ->
+  unit * (protocol_read_any -> 'res)
 (** RPC 2-way call from a client, writing the serialized request into
     the [protocol_write], and return a function to read back
     the answer when it comes back.
@@ -240,7 +237,8 @@ type 'res client_outgoing_call =
     This allows for an asynchronous implementation.
 *)
 
-type client_outgoing_oneway = seq_num:sequence_number -> protocol_write -> unit
+type client_outgoing_oneway =
+  seq_num:sequence_number -> protocol_write_any -> unit
 (** An outgoing oneway RPC call. No response expected. *)
 
 type 'res server_outgoing_reply = reply:(('res, exn) result -> unit) -> unit
@@ -249,7 +247,13 @@ type 'res server_outgoing_reply = reply:(('res, exn) result -> unit) -> unit
 class virtual service_any =
   object
     method virtual process
-        : protocol_read -> reply:((protocol_write -> unit) -> unit) -> unit
+        : 'read 'write.
+          'read ->
+          'read protocol_read ->
+          'write protocol_write ->
+          'read ->
+          reply:(('write -> unit) -> unit) ->
+          unit
     (** Process a message. The function is given a [reply] callback
         that it can call when the response is ready. This allows the
         implementation to use a thread pool or an asynchronous framework.
