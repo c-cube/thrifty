@@ -1,5 +1,7 @@
 (** Unix IOs for Thrift *)
 
+let ( let@ ) = ( @@ )
+
 (** Read a single frame from the FD.
     @raise End_of_file if a frame could not be read. *)
 let read_frame (fd : Unix.file_descr) : string =
@@ -44,6 +46,7 @@ module Client : sig
   type t
 
   val create : protocol -> Unix.file_descr -> t
+  val with_connect : protocol -> Unix.sockaddr -> (t -> 'a) -> 'a
   val call : t -> 'res client_outgoing_call -> ('res, exn) result
   val call_exn : t -> 'res client_outgoing_call -> 'res
   val call_oneway : t -> client_outgoing_oneway -> unit
@@ -56,6 +59,21 @@ end = struct
   }
 
   let create proto fd : t = { fd; proto; buf = Buffer.create 32; seq_num = 0 }
+
+  let with_connect proto sockaddr f =
+    let fd =
+      match sockaddr with
+      | Unix.ADDR_UNIX _ -> Unix.socket Unix.PF_UNIX Unix.SOCK_STREAM 0
+      | Unix.ADDR_INET _ ->
+        let sock = Unix.socket Unix.PF_INET Unix.SOCK_STREAM 0 in
+        Unix.setsockopt sock Unix.TCP_NODELAY true;
+        Unix.setsockopt sock Unix.SO_REUSEADDR true;
+        sock
+    in
+    Unix.connect fd sockaddr;
+    let finally () = Unix.close fd in
+    let c = create proto fd in
+    Fun.protect ~finally (fun () -> f c)
 
   let call_exn (self : t) c =
     (* Perform a blocking call *)
@@ -91,46 +109,73 @@ end
 module Server : sig
   type t
 
-  val create : protocol -> Unix.file_descr -> t
+  val with_bind :
+    ?spawn:((unit -> unit) -> unit) ->
+    protocol ->
+    Unix.sockaddr ->
+    service_any ->
+    (t -> 'a) ->
+    'a
 
-  val serve_loop : t -> service_any -> unit
-  (** Read queries from [fd], process them using [service] *)
+  val serve : t -> unit
 end = struct
-  let ( let@ ) f x = f x
+  let[@inline] with_lock lock f =
+    Mutex.lock lock;
+    Fun.protect ~finally:(fun () -> Mutex.unlock lock) f
 
-  type t = {
-    proto: protocol;
-    buf: Buffer.t;
-    fd: Unix.file_descr;
-    lock: Mutex.t;
-  }
+  let handle_client ~active (proto : protocol) fd (service : service_any) : unit
+      =
+    let (module Proto) = proto in
+    let buf = Buffer.create 32 in
+    let lock = Mutex.create () in
 
-  let create proto fd : t =
-    { proto; fd; buf = Buffer.create 32; lock = Mutex.create () }
-
-  let[@inline] with_lock self f =
-    Mutex.lock self.lock;
-    Fun.protect ~finally:(fun () -> Mutex.unlock self.lock) f
-
-  let serve_loop (self : t) (service : service_any) : unit =
-    let (module Proto) = self.proto in
-    let continue = ref true in
-
-    while !continue do
-      match read_frame_tr self.fd with
-      | exception End_of_file -> continue := false
+    while Atomic.get active do
+      match read_frame_tr fd with
+      | exception End_of_file -> Atomic.set active false
       | read_tr ->
         let reply write_answer =
-          let@ () = with_lock self in
+          let@ () = with_lock lock in
 
-          Buffer.clear self.buf;
+          Buffer.clear buf;
           write_answer
-            (Proto.write
-            @@ Thrifty.Basic_transports.transport_of_buffer self.buf);
-          let resp = Buffer.contents self.buf in
-          write_frame self.fd resp
+            (Proto.write @@ Thrifty.Basic_transports.transport_of_buffer buf);
+          let resp = Buffer.contents buf in
+          write_frame fd resp
         in
 
         service#process (Proto.read read_tr) ~reply
     done
+
+  type t = {
+    fd: Unix.file_descr;
+    proto: protocol;
+    active: bool Atomic.t;
+    service: service_any;
+    spawn: (unit -> unit) -> unit;
+  }
+
+  let serve (self : t) : unit =
+    while Atomic.get self.active do
+      let client_fd, _addr = Unix.accept self.fd in
+      self.spawn (fun () ->
+          handle_client ~active:self.active self.proto client_fd self.service)
+    done
+
+  let default_spawn f = ignore (Thread.create f () : Thread.t)
+
+  let with_bind ?(spawn = default_spawn) proto sockaddr service f =
+    let fd =
+      match sockaddr with
+      | Unix.ADDR_UNIX _ -> Unix.socket Unix.PF_UNIX Unix.SOCK_STREAM 0
+      | Unix.ADDR_INET _ ->
+        let sock = Unix.socket Unix.PF_INET Unix.SOCK_STREAM 0 in
+        Unix.setsockopt sock Unix.TCP_NODELAY true;
+        Unix.setsockopt sock Unix.SO_REUSEADDR true;
+        sock
+    in
+    Unix.bind fd sockaddr;
+    Unix.listen fd 16;
+    let finally () = Unix.close fd in
+    let server : t = { proto; fd; service; spawn; active = Atomic.make true } in
+    Fun.protect ~finally (fun () -> f server)
 end
