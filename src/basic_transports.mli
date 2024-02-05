@@ -1,16 +1,26 @@
 open Types
 
-val transport_of_buffer : Buffer.t -> transport_write
-(** A transport that collects data into a buffer *)
+module TBuffer : sig
+  val write : Buffer.t transport_write
+  (** A transport that collects data into a buffer *)
+end
 
-val transport_of_string : string -> transport_read
-(** Transport that reads from a string *)
+module TString : sig
+  type reader
+  (** Transport that reads from a string *)
 
-val transport_write_file : string -> transport_write
-(** Transport that writes into a file *)
+  val read : reader transport_read
+  val create_reader : string -> reader
+  val read_any : string -> transport_read_any
+end
 
-val transport_read_file : string -> transport_read
-(** Transport that reads from a file *)
+module TChannel : sig
+  val write : out_channel transport_write
+  val read : in_channel transport_read
 
-val with_transport_write_file : string -> (transport_write -> 'a) -> 'a
-val with_transport_read_file : string -> (transport_read -> 'a) -> 'a
+  val with_write_file : string -> (transport_write_any -> 'a) -> 'a
+  (** Transport that writes into a file *)
+
+  val with_read_file : string -> (transport_read_any -> 'a) -> 'a
+  (** Transport that reads from a file *)
+end

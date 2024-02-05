@@ -43,91 +43,117 @@ let message_type_of_int = function
   | 4 -> MSG_ONEWAY
   | _ -> failwith "invalid message type"
 
-let write (tr : transport_write) : protocol_write =
+let write (tr : 'wr transport_write) : 'wr protocol_write =
   let b = Bytes.create 8 in
-  let (module Tr) = tr in
-  let module M = struct
-    let write_i16 i =
+    let write_i16 wr i =
       Bytes.set_int16_be b 0 i;
-      Tr.write b 0 2
+      tr.write wr b 0 2
+    in
 
-    let write_i32 i =
+    let write_i32 wr i =
       Bytes.set_int32_be b 0 i;
-      Tr.write b 0 4
+      tr.write wr b 0 4
+    in
 
-    let write_i64 i =
+    let write_i64 wr i =
       Bytes.set_int64_be b 0 i;
-      Tr.write b 0 8
+      tr.write wr b 0 8
+    in
 
-    let write_byte c = Tr.write_byte c
+    let write_byte wr c = tr.write_byte wr c in
 
-    let write_binary s =
+    let write_binary wr s =
       let n = String.length s in
-      write_i32 (Int32.of_int n);
-      Tr.write (Bytes.unsafe_of_string s) 0 n
+      write_i32 wr (Int32.of_int n);
+      tr.write wr (Bytes.unsafe_of_string s) 0 n
+    in
 
-    let write_string s = write_binary s
+    let write_string wr s = write_binary wr s in
 
-    let write_msg_begin name ty seq =
+    let write_msg_begin wr name ty seq =
       (* use the strict encoding *)
       let v = 0b1000_0000_0000_0001 in
       (* write as unsigned *)
-      Tr.write_byte (Char.unsafe_chr (v lsr 8));
-      Tr.write_byte (Char.unsafe_chr (v land 0xff));
+      tr.write_byte wr (Char.unsafe_chr (v lsr 8));
+      tr.write_byte wr (Char.unsafe_chr (v land 0xff));
       (* unused byte *)
-      Tr.write_byte (Char.unsafe_chr 0);
+      tr.write_byte wr (Char.unsafe_chr 0);
       let msg_type = int_of_message_type ty in
-      Tr.write_byte (Char.unsafe_chr msg_type);
-      write_string name;
-      write_i32 (Int32.of_int seq)
+      tr.write_byte wr (Char.unsafe_chr msg_type);
+      write_string wr name;
+      write_i32 wr (Int32.of_int seq)
+    in
 
-    let write_msg_end () = ()
-    let write_struct_begin _s = ()
-    let write_struct_end () = Tr.flush ()
-    let flush = Tr.flush
+    let write_msg_end wr  = () in
+    let write_struct_begin wr _s = () in
+    let write_struct_end wr  = tr.flush () in
+    let flush = tr.flush in
 
-    let write_field_begin _name ty id =
+    let write_field_begin wr _name ty id =
       (* fits in 16 bits *)
-      Tr.write_byte (Char.unsafe_chr @@ int_of_field_ty ty);
-      write_i16 id
+      tr.write_byte wr (Char.unsafe_chr @@ int_of_field_ty ty);
+      write_i16 wr id in
 
-    let write_field_end () = ()
-    let write_field_stop () = Tr.write_byte (Char.unsafe_chr 0)
+    let write_field_end wr  = () in
+    let write_field_stop wr  = tr.write_byte wr (Char.unsafe_chr 0) in
 
-    let write_map_begin tyk tyv sz =
-      Tr.write_byte (Char.unsafe_chr @@ int_of_element_type tyk);
-      Tr.write_byte (Char.unsafe_chr @@ int_of_element_type tyv);
-      write_i32 (Int32.of_int sz)
+    let write_map_begin wr tyk tyv sz =
+      tr.write_byte wr (Char.unsafe_chr @@ int_of_element_type tyk);
+      tr.write_byte wr (Char.unsafe_chr @@ int_of_element_type tyv);
+      write_i32 wr (Int32.of_int sz) in
 
-    let write_map_end () = ()
+     let write_map_end (wr ) = () in
 
-    let write_list_begin ty sz =
-      Tr.write_byte (Char.unsafe_chr @@ int_of_element_type ty);
-      write_i32 (Int32.of_int sz)
+    let write_list_begin wr ty sz =
+      tr.write_byte wr (Char.unsafe_chr @@ int_of_element_type ty);
+      write_i32 wr (Int32.of_int sz) in
 
-    let write_list_end () = ()
+    let write_list_end (wr ) = () in
 
-    let write_set_begin ty sz =
-      Tr.write_byte (Char.unsafe_chr @@ int_of_element_type ty);
-      write_i32 (Int32.of_int sz)
+    let write_set_begin wr ty sz =
+      tr.write_byte wr (Char.unsafe_chr @@ int_of_element_type ty);
+      write_i32 wr (Int32.of_int sz) in
 
-    let write_set_end () = ()
+    let write_set_end (wr ) = () in
 
-    let write_bool b =
-      Tr.write_byte
+    let write_bool wr b =
+      tr.write_byte wr 
         (Char.unsafe_chr
            (if b then
              1
            else
-             0))
+             0)) in
 
-    let write_double f =
+    let write_double wr f =
       let i = Int64.bits_of_float f in
-      write_i64 i
-  end in
-  (module M)
+      write_i64 wr i in
+    {
+  write_msg_begin;
+  write_msg_end;
+  write_struct_begin;
+  write_struct_end;
+  write_field_begin;
+  write_field_end;
+  write_field_stop;
+      (** Indicate that the struct is done, no more fields will be added to it *)
+  write_map_begin;
+  write_map_end;
+  write_list_begin;
+  write_list_end;
+  write_set_begin;
+  write_set_end;
+  write_bool;
+  write_byte;
+  write_i16;
+  write_i32;
+  write_i64;
+  write_double;
+  write_string;
+  write_binary;
+  flush;
+    }
 
-let read (tr : transport_read) : protocol_read =
+let read (tr : 'rd transport_read) : 'rd protocol_read =
   let b = Bytes.create 8 in
   let (module Tr) = tr in
   let module M = struct

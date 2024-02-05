@@ -2,18 +2,46 @@
 
 open Types
 
-let transport_of_buffer (buf : Buffer.t) : transport_write =
-  let module M = struct
-    let close () = ()
-    let is_closed () = false
-    let write_byte c = Buffer.add_char buf c
-    let write s i len = Buffer.add_subbytes buf s i len
-    let flush () = ()
-  end in
-  (module M)
+module TBuffer = struct
+  let write : Buffer.t transport_write =
+    let close _buf = () in
+    let is_closed _buf = false in
+    let write_byte buf c = Buffer.add_char buf c in
+    let write buf s i len = Buffer.add_subbytes buf s i len in
+    let flush _buf = () in
+    { close; is_closed; write_byte; write; flush }
+end
+
+module TString = struct
+  type reader = { s: string; mutable off: int }
+
+  let create_reader s : reader = { s; off = 0 }
+
+  let read : reader transport_read =
+    let is_closed self = self.off >= String.length self.s in
+    let close _ = () in
+
+    let read_byte (self : reader) =
+      let c = self.s.[self.off] in
+      self.off <- self.off + 1;
+      c
+    in
+
+    let read self buf i len =
+      let len = min len (String.length self.s - self.off) in
+      Bytes.blit_string self.s self.off buf i len;
+      self.off <- self.off + len;
+      len
+    in
+    { is_closed; close; read_byte; read }
+
+  let read_any s = TR_read (read, create_reader s)
+end
+
+let transport_write_file (file : string) : _ transport_write = assert false
 
 (** Transport that reads from a string *)
-let transport_of_string (s : string) : transport_read =
+let transport_of_string (s : string) : transport_read_any =
   let off = ref 0 in
   let module M = struct
     let is_closed () = !off >= String.length s

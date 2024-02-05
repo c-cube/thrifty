@@ -1,5 +1,5 @@
 open Types
 
-val write : transport_write -> protocol_write
-val read : transport_read -> protocol_read
+val write : 'wr transport_write -> 'wr protocol_write
+val read : 'rd transport_read -> 'rd protocol_read
 val protocol : protocol
