@@ -5,10 +5,12 @@
 
 open Types
 
-val transfer_struct : protocol_read -> protocol_write -> unit
+val transfer_struct :
+  'rd protocol_read -> 'wr protocol_write -> 'rd -> 'wr -> unit
 (** [transfer_struct r w] reads a struct from [r] (any shape) and
     writes it into [w]. *)
 
-val transfer_message : protocol_read -> protocol_write -> unit
+val transfer_message :
+  'rd protocol_read -> 'wr protocol_write -> 'rd -> 'wr -> unit
 (** [transfer_message r w] reads a message from [r] (any shape) and
     writes it into [w]. *)

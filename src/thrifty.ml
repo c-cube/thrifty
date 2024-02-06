@@ -1,11 +1,14 @@
 (** Thrift runtime interface *)
 
 module Types = Types
-module Basic_transports = Basic_transports
-module Debug_protocol = Debug_protocol
-module Binary_protocol = Binary_protocol
-module Compact_protocol = Compact_protocol
-module Service_multiplex = Service_multiplex
+module TBuffer = TBuffer
+module TChannel = TChannel
+module TString = TString
+module TFile = TFile
+module BinaryProtocol = BinaryProtocol
+module Debug = Debug
+module CompactProtocol = CompactProtocol
+module ServiceMultiplex = ServiceMultiplex
 module Transfer = Transfer
 module Direct_call = Direct_call
 open Types
@@ -13,24 +16,24 @@ open Types
 (** Encode to string using a protocol and encoder.
     @param protocol a function that writes to a transport using
     a given protocol (default is the binary protocol) *)
-let write_to_string ?(protocol = Binary_protocol.write)
-    (enc : protocol_write -> 'a -> unit) (x : 'a) : string =
+let write_to_string ?(protocol = BinaryProtocol.write)
+    (enc : 'wr protocol_write -> 'wr -> 'a -> unit) (x : 'a) : string =
   let buf = Buffer.create 32 in
-  let transport = Basic_transports.transport_of_buffer buf in
+  let transport = TBuffer.write in
   let op = protocol transport in
-  enc op x;
-  let (module Tr) = transport in
-  Tr.flush ();
+  enc op buf x;
+  transport.flush buf;
   Buffer.contents buf
 
 (** Decode a string using a protocol and decoder.
     @param protocol function that read structured data from a transport (byte stream).
     Default is the binary protocol. *)
-let read_from_string ?(protocol = Binary_protocol.read)
-    (dec : protocol_read -> 'a) (str : string) : 'a =
-  let transport = Basic_transports.transport_of_string str in
-  let ip = protocol transport in
-  let x = dec ip in
+let read_from_string ?(protocol = BinaryProtocol.read)
+    (dec : 'rd protocol_read -> 'rd -> 'a) (str : string) : 'a =
+  let transport = TString.read in
+  let rd = TString.create_reader str in
+  let pr = protocol transport in
+  let x = dec pr rd in
   x
 
 (* TODO: a unix interface with TCP client/server *)

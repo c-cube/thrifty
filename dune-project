@@ -19,6 +19,7 @@
   (ocaml
    (>= 4.08))
   (qcheck-core :with-test)
+  (containers :with-test)
   dune)
  (depopts base-unix)
  (tags

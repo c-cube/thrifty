@@ -241,23 +241,20 @@ type client_outgoing_oneway =
 
 type 'res server_outgoing_reply = reply:(('res, exn) result -> unit) -> unit
 
-(** Class for server implementation of a server. *)
-class type service_any =
-  object
-    method process :
-      'read 'write.
-      'read protocol_read ->
-      'write protocol_write ->
-      'read ->
-      reply:(('write -> unit) -> unit) ->
-      unit
-    (** Process a message. The function is given a [reply] callback
+type service = {
+  name: string;  (** Name of this service. This can be useful to multiplex. *)
+  process:
+    'read 'write.
+    'read protocol_read ->
+    'write protocol_write ->
+    'read ->
+    reply:(('write -> unit) -> unit) ->
+    unit;
+      (** Process a message. The function is given a [reply] callback
         that it can call when the response is ready. This allows the
         implementation to use a thread pool or an asynchronous framework.
 
         This might be provided with a different pair of protocols
         every time it is called. *)
-
-    method name : string
-    (** Name of this service. This can be useful to multiplex. *)
-  end
+}
+(** Class for server implementation of a service. *)
