@@ -4,3 +4,4 @@ _opam
 *.tmp
 *.pdf
 .merlin
+.vscode
