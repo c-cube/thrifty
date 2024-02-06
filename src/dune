@@ -1,4 +1,4 @@
 (library
  (public_name thrifty)
- ;(libraries stdint)
- (name thrifty))
+ (name thrifty)
+ (private_modules common_))
