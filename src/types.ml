@@ -113,7 +113,6 @@ type sequence_number = int
     what is contained in these bytes. *)
 
 type 'st transport_read = {
-  is_closed: 'st -> bool;
   close: 'st -> unit;
   read_byte: 'st -> char;
   read: 'st -> bytes -> int -> int -> int;
@@ -125,7 +124,7 @@ type transport_read_any =
 
 (** Really read [n] bytes into [b] at offset [i].
      @raise End_of_file if the input is exhausted first. *)
-let really_read (tr : _ transport_read) read b i n : unit =
+let really_read (tr : 'rd transport_read) (read : 'rd) b i n : unit =
   let i = ref i in
   let n = ref n in
   while !n > 0 do
@@ -136,7 +135,6 @@ let really_read (tr : _ transport_read) read b i n : unit =
   done
 
 type 'st transport_write = {
-  is_closed: 'st -> bool;
   close: 'st -> unit;
   write_byte: 'st -> char -> unit;
   write: 'st -> bytes -> int -> int -> unit;
@@ -244,16 +242,15 @@ type client_outgoing_oneway =
 type 'res server_outgoing_reply = reply:(('res, exn) result -> unit) -> unit
 
 (** Class for server implementation of a server. *)
-class virtual service_any =
+class type service_any =
   object
-    method virtual process
-        : 'read 'write.
-          'read ->
-          'read protocol_read ->
-          'write protocol_write ->
-          'read ->
-          reply:(('write -> unit) -> unit) ->
-          unit
+    method process :
+      'read 'write.
+      'read protocol_read ->
+      'write protocol_write ->
+      'read ->
+      reply:(('write -> unit) -> unit) ->
+      unit
     (** Process a message. The function is given a [reply] callback
         that it can call when the response is ready. This allows the
         implementation to use a thread pool or an asynchronous framework.
@@ -261,6 +258,6 @@ class virtual service_any =
         This might be provided with a different pair of protocols
         every time it is called. *)
 
-    method virtual name : string
+    method name : string
     (** Name of this service. This can be useful to multiplex. *)
   end
