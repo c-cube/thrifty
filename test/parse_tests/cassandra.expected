@@ -1,0 +1,429 @@
+parse "cassandra.thrift"
+parsed ok
+content:
+{ headers: [namespace ("java", "org.apache.cassandra.thrift")
+            namespace ("cpp", "org.apache.cassandra")
+            namespace ("csharp", "Apache.Cassandra")
+            namespace ("py", "cassandra")
+            namespace ("php", "cassandra")
+            namespace ("perl", "Cassandra")
+            namespace ("rb", "CassandraThrift")];
+ defs: [const VERSION : STRING := "20.1.0";
+        struct Column {
+          (1:) name: required BINARY;
+          (2:) value: optional BINARY;
+          (3:) timestamp: optional I64;
+          (4:) ttl: optional I32;
+        };
+        struct SuperColumn {
+          (1:) name: required BINARY;
+          (2:) columns: required list< Column >;
+        };
+        struct CounterColumn {
+          (1:) name: required BINARY;
+          (2:) value: required I64;
+        };
+        struct CounterSuperColumn {
+          (1:) name: required BINARY;
+          (2:) columns: required list< CounterColumn >;
+        };
+        struct ColumnOrSuperColumn {
+          (1:) column: optional Column;
+          (2:) super_column: optional SuperColumn;
+          (3:) counter_column: optional CounterColumn;
+          (4:) counter_super_column: optional CounterSuperColumn;
+        };
+        exception NotFoundException {  };
+        exception InvalidRequestException { (1:) why: required STRING; };
+        exception UnavailableException {  };
+        exception TimedOutException {
+          (1:) acknowledged_by: optional I32;
+          (2:) acknowledged_by_batchlog: optional BOOL;
+          (3:) paxos_in_progress: optional BOOL;
+        };
+        exception AuthenticationException { (1:) why: required STRING; };
+        exception AuthorizationException { (1:) why: required STRING; };
+        exception SchemaDisagreementException {  };
+        enum ConsistencyLevel {
+          ONE = 1;
+          QUORUM = 2;
+          LOCAL_QUORUM = 3;
+          EACH_QUORUM = 4;
+          ALL = 5;
+          ANY = 6;
+          TWO = 7;
+          THREE = 8;
+          SERIAL = 9;
+          LOCAL_SERIAL = 10;
+          LOCAL_ONE = 11;
+        };
+        struct ColumnParent {
+          (3:) column_family: required STRING;
+          (4:) super_column: optional BINARY;
+        };
+        struct ColumnPath {
+          (3:) column_family: required STRING;
+          (4:) super_column: optional BINARY;
+          (5:) column: optional BINARY;
+        };
+        struct SliceRange {
+          (1:) start: required BINARY;
+          (2:) finish: required BINARY;
+          (3:) reversed: required BOOL := 0;
+          (4:) count: required I32 := 100;
+        };
+        struct SlicePredicate {
+          (1:) column_names: optional list< BINARY >;
+          (2:) slice_range: optional SliceRange;
+        };
+        enum IndexOperator { EQ; GTE; GT; LTE; LT; };
+        struct IndexExpression {
+          (1:) column_name: required BINARY;
+          (2:) op: required IndexOperator;
+          (3:) value: required BINARY;
+        };
+        struct IndexClause {
+          (1:) expressions: required list< IndexExpression >;
+          (2:) start_key: required BINARY;
+          (3:) count: required I32 := 100;
+        };
+        struct KeyRange {
+          (1:) start_key: optional BINARY;
+          (2:) end_key: optional BINARY;
+          (3:) start_token: optional STRING;
+          (4:) end_token: optional STRING;
+          (6:) row_filter: optional list< IndexExpression >;
+          (5:) count: required I32 := 100;
+        };
+        struct KeySlice {
+          (1:) key: required BINARY;
+          (2:) columns: required list< ColumnOrSuperColumn >;
+        };
+        struct KeyCount {
+          (1:) key: required BINARY;
+          (2:) count: required I32;
+        };
+        struct Deletion {
+          (1:) timestamp: optional I64;
+          (2:) super_column: optional BINARY;
+          (3:) predicate: optional SlicePredicate;
+        };
+        struct Mutation {
+          (1:) column_or_supercolumn: optional ColumnOrSuperColumn;
+          (2:) deletion: optional Deletion;
+        };
+        struct EndpointDetails {
+          (1:) host:  STRING;
+          (2:) datacenter:  STRING;
+          (3:) rack: optional STRING;
+        };
+        struct CASResult {
+          (1:) success: required BOOL;
+          (2:) current_values: optional list< Column >;
+        };
+        struct TokenRange {
+          (1:) start_token: required STRING;
+          (2:) end_token: required STRING;
+          (3:) endpoints: required list< STRING >;
+          (4:) rpc_endpoints: optional list< STRING >;
+          (5:) endpoint_details: optional list< EndpointDetails >;
+        };
+        struct AuthenticationRequest {
+          (1:) credentials: required map< STRING, STRING >;
+        };
+        enum IndexType { KEYS; CUSTOM; COMPOSITES; };
+        struct ColumnDef {
+          (1:) name: required BINARY;
+          (2:) validation_class: required STRING;
+          (3:) index_type: optional IndexType;
+          (4:) index_name: optional STRING;
+          (5:) index_options: optional map< STRING, STRING >;
+        };
+        struct TriggerDef {
+          (1:) name: required STRING;
+          (2:) options: required map< STRING, STRING >;
+        };
+        struct CfDef {
+          (1:) keyspace: required STRING;
+          (2:) name: required STRING;
+          (3:) column_type: optional STRING := "Standard";
+          (5:) comparator_type: optional STRING := "BytesType";
+          (6:) subcomparator_type: optional STRING;
+          (8:) comment: optional STRING;
+          (12:) read_repair_chance: optional DOUBLE;
+          (13:) column_metadata: optional list< ColumnDef >;
+          (14:) gc_grace_seconds: optional I32;
+          (15:) default_validation_class: optional STRING;
+          (16:) id: optional I32;
+          (17:) min_compaction_threshold: optional I32;
+          (18:) max_compaction_threshold: optional I32;
+          (26:) key_validation_class: optional STRING;
+          (28:) key_alias: optional BINARY;
+          (29:) compaction_strategy: optional STRING;
+          (30:) compaction_strategy_options: optional map< STRING, STRING >;
+          (32:) compression_options: optional map< STRING, STRING >;
+          (33:) bloom_filter_fp_chance: optional DOUBLE;
+          (34:) caching: optional STRING := "keys_only";
+          (37:) dclocal_read_repair_chance: optional DOUBLE := 0.000000;
+          (39:) memtable_flush_period_in_ms: optional I32;
+          (40:) default_time_to_live: optional I32;
+          (42:) speculative_retry: optional STRING := "NONE";
+          (43:) triggers: optional list< TriggerDef >;
+          (44:) cells_per_row_to_cache: optional STRING := "100";
+          (45:) min_index_interval: optional I32;
+          (46:) max_index_interval: optional I32;
+          (9:) row_cache_size: optional DOUBLE;
+          (11:) key_cache_size: optional DOUBLE;
+          (19:) row_cache_save_period_in_seconds: optional I32;
+          (20:) key_cache_save_period_in_seconds: optional I32;
+          (21:) memtable_flush_after_mins: optional I32;
+          (22:) memtable_throughput_in_mb: optional I32;
+          (23:) memtable_operations_in_millions: optional DOUBLE;
+          (24:) replicate_on_write: optional BOOL;
+          (25:) merge_shards_chance: optional DOUBLE;
+          (27:) row_cache_provider: optional STRING;
+          (31:) row_cache_keys_to_save: optional I32;
+          (38:) populate_io_cache_on_flush: optional BOOL;
+          (41:) index_interval: optional I32;
+        };
+        struct KsDef {
+          (1:) name: required STRING;
+          (2:) strategy_class: required STRING;
+          (3:) strategy_options: optional map< STRING, STRING >;
+          (4:) replication_factor: optional I32;
+          (5:) cf_defs: required list< CfDef >;
+          (6:) durable_writes: optional BOOL := 1;
+        };
+        enum Compression { GZIP = 1; NONE = 2; };
+        enum CqlResultType { ROWS = 1; VOID = 2; INT = 3; };
+        struct CqlRow {
+          (1:) key: required BINARY;
+          (2:) columns: required list< Column >;
+        };
+        struct CqlMetadata {
+          (1:) name_types: required map< BINARY, STRING >;
+          (2:) value_types: required map< BINARY, STRING >;
+          (3:) default_name_type: required STRING;
+          (4:) default_value_type: required STRING;
+        };
+        struct CqlResult {
+          (1:) type: required CqlResultType;
+          (2:) rows: optional list< CqlRow >;
+          (3:) num: optional I32;
+          (4:) schema: optional CqlMetadata;
+        };
+        struct CqlPreparedResult {
+          (1:) itemId: required I32;
+          (2:) count: required I32;
+          (3:) variable_types: optional list< STRING >;
+          (4:) variable_names: optional list< STRING >;
+        };
+        struct CfSplit {
+          (1:) start_token: required STRING;
+          (2:) end_token: required STRING;
+          (3:) row_count: required I64;
+        };
+        struct ColumnSlice {
+          (1:) start: optional BINARY;
+          (2:) finish: optional BINARY;
+        };
+        struct MultiSliceRequest {
+          (1:) key: optional BINARY;
+          (2:) column_parent: optional ColumnParent;
+          (3:) column_slices: optional list< ColumnSlice >;
+          (4:) reversed: optional BOOL := false;
+          (5:) count: optional I32 := 1000;
+          (6:) consistency_level: optional ConsistencyLevel := ConsistencyLevel.ONE;
+        };
+        service Cassandra {
+          void login ((1:) auth_request: required AuthenticationRequest;)
+            throws ((1:) authnx:  AuthenticationException;
+                    (2:) authzx:  AuthorizationException;)
+          void set_keyspace ((1:) keyspace: required STRING;)
+            throws ((1:) ire:  InvalidRequestException;)
+          ColumnOrSuperColumn get ((1:) key: required BINARY;
+                                   (2:) column_path: required ColumnPath;
+                                   (3:) consistency_level: required ConsistencyLevel := ConsistencyLevel.ONE;)
+            throws ((1:) ire:  InvalidRequestException;
+                    (2:) nfe:  NotFoundException;
+                    (3:) ue:  UnavailableException;
+                    (4:) te:  TimedOutException;)
+          list< ColumnOrSuperColumn > get_slice ((1:) key: required BINARY;
+                                                 (2:) column_parent: required ColumnParent;
+                                                 (3:) predicate: required SlicePredicate;
+                                                 (4:) consistency_level: required ConsistencyLevel := ConsistencyLevel.ONE;)
+            throws ((1:) ire:  InvalidRequestException;
+                    (2:) ue:  UnavailableException;
+                    (3:) te:  TimedOutException;)
+          I32 get_count ((1:) key: required BINARY;
+                         (2:) column_parent: required ColumnParent;
+                         (3:) predicate: required SlicePredicate;
+                         (4:) consistency_level: required ConsistencyLevel := ConsistencyLevel.ONE;)
+            throws ((1:) ire:  InvalidRequestException;
+                    (2:) ue:  UnavailableException;
+                    (3:) te:  TimedOutException;)
+          map< BINARY, list< ColumnOrSuperColumn > > multiget_slice (
+            (1:) keys: required list< BINARY >;
+            (2:) column_parent: required ColumnParent;
+            (3:) predicate: required SlicePredicate;
+            (4:) consistency_level: required ConsistencyLevel := ConsistencyLevel.ONE;)
+            throws ((1:) ire:  InvalidRequestException;
+                    (2:) ue:  UnavailableException;
+                    (3:) te:  TimedOutException;)
+          map< BINARY, I32 > multiget_count ((1:) keys: required list< 
+                                             BINARY >;
+                                             (2:) column_parent: required ColumnParent;
+                                             (3:) predicate: required SlicePredicate;
+                                             (4:) consistency_level: required ConsistencyLevel := ConsistencyLevel.ONE;)
+            throws ((1:) ire:  InvalidRequestException;
+                    (2:) ue:  UnavailableException;
+                    (3:) te:  TimedOutException;)
+          list< KeySlice > get_range_slices ((1:) column_parent: required ColumnParent;
+                                             (2:) predicate: required SlicePredicate;
+                                             (3:) range: required KeyRange;
+                                             (4:) consistency_level: required ConsistencyLevel := ConsistencyLevel.ONE;)
+            throws ((1:) ire:  InvalidRequestException;
+                    (2:) ue:  UnavailableException;
+                    (3:) te:  TimedOutException;)
+          list< KeySlice > get_paged_slice ((1:) column_family: required STRING;
+                                            (2:) range: required KeyRange;
+                                            (3:) start_column: required BINARY;
+                                            (4:) consistency_level: required ConsistencyLevel := ConsistencyLevel.ONE;)
+            throws ((1:) ire:  InvalidRequestException;
+                    (2:) ue:  UnavailableException;
+                    (3:) te:  TimedOutException;)
+          list< KeySlice > get_indexed_slices ((1:) column_parent: required ColumnParent;
+                                               (2:) index_clause: required IndexClause;
+                                               (3:) column_predicate: required SlicePredicate;
+                                               (4:) consistency_level: required ConsistencyLevel := ConsistencyLevel.ONE;)
+            throws ((1:) ire:  InvalidRequestException;
+                    (2:) ue:  UnavailableException;
+                    (3:) te:  TimedOutException;)
+          void insert ((1:) key: required BINARY;
+                       (2:) column_parent: required ColumnParent;
+                       (3:) column: required Column;
+                       (4:) consistency_level: required ConsistencyLevel := ConsistencyLevel.ONE;)
+            throws ((1:) ire:  InvalidRequestException;
+                    (2:) ue:  UnavailableException;
+                    (3:) te:  TimedOutException;)
+          void add ((1:) key: required BINARY;
+                    (2:) column_parent: required ColumnParent;
+                    (3:) column: required CounterColumn;
+                    (4:) consistency_level: required ConsistencyLevel := ConsistencyLevel.ONE;)
+            throws ((1:) ire:  InvalidRequestException;
+                    (2:) ue:  UnavailableException;
+                    (3:) te:  TimedOutException;)
+          CASResult cas ((1:) key: required BINARY;
+                         (2:) column_family: required STRING;
+                         (3:) expected:  list< Column >;
+                         (4:) updates:  list< Column >;
+                         (5:) serial_consistency_level: required ConsistencyLevel := ConsistencyLevel.SERIAL;
+                         (6:) commit_consistency_level: required ConsistencyLevel := ConsistencyLevel.QUORUM;)
+            throws ((1:) ire:  InvalidRequestException;
+                    (2:) ue:  UnavailableException;
+                    (3:) te:  TimedOutException;)
+          void remove ((1:) key: required BINARY;
+                       (2:) column_path: required ColumnPath;
+                       (3:) timestamp: required I64;
+                       (4:) consistency_level:  ConsistencyLevel := ConsistencyLevel.ONE;)
+            throws ((1:) ire:  InvalidRequestException;
+                    (2:) ue:  UnavailableException;
+                    (3:) te:  TimedOutException;)
+          void remove_counter ((1:) key: required BINARY;
+                               (2:) path: required ColumnPath;
+                               (3:) consistency_level: required ConsistencyLevel := ConsistencyLevel.ONE;)
+            throws ((1:) ire:  InvalidRequestException;
+                    (2:) ue:  UnavailableException;
+                    (3:) te:  TimedOutException;)
+          void truncate ((1:) cfname: required STRING;)
+            throws ((1:) ire:  InvalidRequestException;
+                    (2:) ue:  UnavailableException;
+                    (3:) te:  TimedOutException;)
+          list< ColumnOrSuperColumn > get_multi_slice ((1:) request: required MultiSliceRequest;)
+            throws ((1:) ire:  InvalidRequestException;
+                    (2:) ue:  UnavailableException;
+                    (3:) te:  TimedOutException;)
+          map< STRING, list< STRING > > describe_schema_versions ()
+            throws ((1:) ire:  InvalidRequestException;)
+          list< KsDef > describe_keyspaces ()
+            throws ((1:) ire:  InvalidRequestException;)
+          STRING describe_cluster_name ()
+          STRING describe_version ()
+          list< TokenRange > describe_ring ((1:) keyspace: required STRING;)
+            throws ((1:) ire:  InvalidRequestException;)
+          list< TokenRange > describe_local_ring ((1:) keyspace: required STRING;)
+            throws ((1:) ire:  InvalidRequestException;)
+          map< STRING, STRING > describe_token_map ()
+            throws ((1:) ire:  InvalidRequestException;)
+          STRING describe_partitioner ()
+          STRING describe_snitch ()
+          KsDef describe_keyspace ((1:) keyspace: required STRING;)
+            throws ((1:) nfe:  NotFoundException;
+                    (2:) ire:  InvalidRequestException;)
+          list< STRING > describe_splits ((1:) cfName: required STRING;
+                                          (2:) start_token: required STRING;
+                                          (3:) end_token: required STRING;
+                                          (4:) keys_per_split: required I32;)
+            throws ((1:) ire:  InvalidRequestException;)
+          BINARY trace_next_query ()
+          list< CfSplit > describe_splits_ex ((1:) cfName: required STRING;
+                                              (2:) start_token: required STRING;
+                                              (3:) end_token: required STRING;
+                                              (4:) keys_per_split: required I32;)
+            throws ((1:) ire:  InvalidRequestException;)
+          STRING system_add_column_family ((1:) cf_def: required CfDef;)
+            throws ((1:) ire:  InvalidRequestException;
+                    (2:) sde:  SchemaDisagreementException;)
+          STRING system_drop_column_family ((1:) column_family: required STRING;)
+            throws ((1:) ire:  InvalidRequestException;
+                    (2:) sde:  SchemaDisagreementException;)
+          STRING system_add_keyspace ((1:) ks_def: required KsDef;)
+            throws ((1:) ire:  InvalidRequestException;
+                    (2:) sde:  SchemaDisagreementException;)
+          STRING system_drop_keyspace ((1:) keyspace: required STRING;)
+            throws ((1:) ire:  InvalidRequestException;
+                    (2:) sde:  SchemaDisagreementException;)
+          STRING system_update_keyspace ((1:) ks_def: required KsDef;)
+            throws ((1:) ire:  InvalidRequestException;
+                    (2:) sde:  SchemaDisagreementException;)
+          STRING system_update_column_family ((1:) cf_def: required CfDef;)
+            throws ((1:) ire:  InvalidRequestException;
+                    (2:) sde:  SchemaDisagreementException;)
+          CqlResult execute_cql_query ((1:) query: required BINARY;
+                                       (2:) compression: required Compression;)
+            throws ((1:) ire:  InvalidRequestException;
+                    (2:) ue:  UnavailableException;
+                    (3:) te:  TimedOutException;
+                    (4:) sde:  SchemaDisagreementException;)
+          CqlResult execute_cql3_query ((1:) query: required BINARY;
+                                        (2:) compression: required Compression;
+                                        (3:) consistency: required ConsistencyLevel;)
+            throws ((1:) ire:  InvalidRequestException;
+                    (2:) ue:  UnavailableException;
+                    (3:) te:  TimedOutException;
+                    (4:) sde:  SchemaDisagreementException;)
+          CqlPreparedResult prepare_cql_query ((1:) query: required BINARY;
+                                               (2:) compression: required Compression;)
+            throws ((1:) ire:  InvalidRequestException;)
+          CqlPreparedResult prepare_cql3_query ((1:) query: required BINARY;
+                                                (2:) compression: required Compression;)
+            throws ((1:) ire:  InvalidRequestException;)
+          CqlResult execute_prepared_cql_query ((1:) itemId: required I32;
+                                                (2:) values: required list< 
+                                                BINARY >;)
+            throws ((1:) ire:  InvalidRequestException;
+                    (2:) ue:  UnavailableException;
+                    (3:) te:  TimedOutException;
+                    (4:) sde:  SchemaDisagreementException;)
+          CqlResult execute_prepared_cql3_query ((1:) itemId: required I32;
+                                                 (2:) values: required list< 
+                                                 BINARY >;
+                                                 (3:) consistency: required ConsistencyLevel;)
+            throws ((1:) ire:  InvalidRequestException;
+                    (2:) ue:  UnavailableException;
+                    (3:) te:  TimedOutException;
+                    (4:) sde:  SchemaDisagreementException;)
+          void set_cql_version ((1:) version: required STRING;)
+            throws ((1:) ire:  InvalidRequestException;)
+        };]
+ }

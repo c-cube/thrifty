@@ -1,39 +1,61 @@
+
 (rule
- (alias runtest)
+ (targets ThriftTest.out)
  (deps
   (:file ThriftTest.thrift))
  (package thrifty_compiler)
  (action
-  (run ./bin/parse_print.exe %{file})))
+  (with-stdout-to %{targets} (run ./bin/parse_print.exe %{file}))))
 
 (rule
  (alias runtest)
+ (action (diff? ThriftTest.expected ThriftTest.out)))
+
+(rule
+  (targets fb303.out)
  (deps
   (:file fb303.thrift))
- (package thrifty_compiler)
  (action
-  (run ./bin/parse_print.exe %{file})))
+     (with-stdout-to %{targets} (run ./bin/parse_print.exe %{file}))))
 
 (rule
  (alias runtest)
+ (package thrifty_compiler)
+ (action (diff? fb303.expected fb303.out)))
+
+(rule
+ (targets shared.out)
  (deps
   (:file shared.thrift))
- (package thrifty_compiler)
  (action
-  (run ./bin/parse_print.exe %{file})))
+  (with-stdout-to %{targets} (run ./bin/parse_print.exe %{file}))))
 
 (rule
  (alias runtest)
+ (package thrifty_compiler)
+ (action (diff shared.expected shared.out)))
+
+
+(rule
+ (targets tutorial.out)
  (deps
   (:file tutorial.thrift))
- (package thrifty_compiler)
  (action
-  (run ./bin/parse_print.exe %{file})))
+  (with-stdout-to %{targets} (run ./bin/parse_print.exe %{file}))))
 
 (rule
  (alias runtest)
+ (package thrifty_compiler)
+ (action (diff tutorial.expected tutorial.out)))
+
+(rule
+ (targets cassandra.out)
  (deps
   (:file cassandra.thrift))
- (package thrifty_compiler)
  (action
-  (run ./bin/parse_print.exe %{file})))
+  (with-stdout-to %{targets} (run ./bin/parse_print.exe %{file}))))
+
+(rule
+ (alias runtest)
+ (package thrifty_compiler)
+ (action (diff cassandra.expected cassandra.out)))

@@ -1,0 +1,175 @@
+parse "ThriftTest.thrift"
+parsed ok
+content:
+{ headers: [namespace ("c_glib", "TTest")
+            namespace ("cpp", "thrift.test")
+            namespace ("delphi", "Thrift.Test")
+            namespace ("go", "thrifttest")
+            namespace ("java", "thrift.test")
+            namespace ("js", "ThriftTest")
+            namespace ("lua", "ThriftTest")
+            namespace ("netstd", "ThriftTest")
+            namespace ("perl", "ThriftTest")
+            namespace ("php", "ThriftTest")
+            namespace ("py", "ThriftTest")
+            namespace ("py.twisted", "ThriftTest")
+            namespace ("rb", "Thrift.Test")
+            namespace ("st", "ThriftTest")
+            namespace ("xsd", "test")
+            namespace ("noexist", "ThriftTest")
+            namespace ("cpp.noexist", "ThriftTest")
+            namespace ("*", "thrift.test")];
+ defs: [enum Numberz { ONE = 1; TWO; THREE; FIVE = 5; SIX; EIGHT = 8; };
+        const myNumberz : Numberz := Numberz.ONE;
+        typedef UserId := I64;
+        struct Bonk { (1:) message:  STRING; (2:) type:  I32; };
+        typedef MapType := map< STRING, Bonk >;
+        struct Bools { (1:) im_true:  BOOL; (2:) im_false:  BOOL; };
+        struct Xtruct {
+          (1:) string_thing:  STRING;
+          (4:) byte_thing:  I8;
+          (9:) i32_thing:  I32;
+          (11:) i64_thing:  I64;
+        };
+        struct Xtruct2 {
+          (1:) byte_thing:  I8;
+          (2:) struct_thing:  Xtruct;
+          (3:) i32_thing:  I32;
+        };
+        struct Xtruct3 {
+          (1:) string_thing:  STRING;
+          (4:) changed:  I32;
+          (9:) i32_thing:  I32;
+          (11:) i64_thing:  I64;
+        };
+        struct Insanity {
+          (1:) userMap:  map< Numberz, UserId >;
+          (2:) xtructs:  list< Xtruct >;
+        } (python.immutable = '');
+        struct CrazyNesting {
+          (1:) string_field:  STRING;
+          (2:) set_field: optional set< Insanity >;
+          (3:) list_field: required list< map< set< I32 > (python.immutable = ''),
+                                               map< I32,
+                                                    set< list< map< Insanity,
+                                                                    STRING > (
+                                                               python.immutable = '') > (
+                                                         python.immutable = '') > > > >;
+          (4:) binary_field:  BINARY;
+        };
+        union SomeUnion {
+          (1:) map_thing: required map< Numberz, UserId >;
+          (2:) string_thing: required STRING;
+          (3:) i32_thing: required I32;
+          (4:) xtruct_thing: required Xtruct3;
+          (5:) insanity_thing: required Insanity;
+        };
+        exception Xception { (1:) errorCode:  I32; (2:) message:  STRING; };
+        exception Xception2 {
+          (1:) errorCode:  I32;
+          (2:) struct_thing:  Xtruct;
+        };
+        struct EmptyStruct {  };
+        struct OneField { (1:) field:  EmptyStruct; };
+        service ThriftTest {
+          void testVoid ()
+          STRING testString ((1:) thing:  STRING;)
+          BOOL testBool ((1:) thing:  BOOL;)
+          I8 testByte ((1:) thing:  I8;)
+          I32 testI32 ((1:) thing:  I32;)
+          I64 testI64 ((1:) thing:  I64;)
+          DOUBLE testDouble ((1:) thing:  DOUBLE;)
+          BINARY testBinary ((1:) thing:  BINARY;)
+          Xtruct testStruct ((1:) thing:  Xtruct;)
+          Xtruct2 testNest ((1:) thing:  Xtruct2;)
+          map< I32, I32 > testMap ((1:) thing:  map< I32, I32 >;)
+          map< STRING, STRING > testStringMap ((1:) thing:  map< STRING,
+                                                                 STRING >;)
+          set< I32 > testSet ((1:) thing:  set< I32 >;)
+          list< I32 > testList ((1:) thing:  list< I32 >;)
+          Numberz testEnum ((1:) thing:  Numberz;)
+          UserId testTypedef ((1:) thing:  UserId;)
+          map< I32, map< I32, I32 > > testMapMap ((1:) hello:  I32;)
+          map< UserId, map< Numberz, Insanity > > testInsanity ((1:) argument:  Insanity;)
+          Xtruct testMulti ((1:) arg0:  I8; (2:) arg1:  I32; (3:) arg2:  I64;
+                            (4:) arg3:  map< I16, STRING >;
+                            (5:) arg4:  Numberz; (6:) arg5:  UserId;)
+          void testException ((1:) arg:  STRING;)
+            throws ((1:) err1:  Xception;)
+          Xtruct testMultiException ((1:) arg0:  STRING; (2:) arg1:  STRING;)
+            throws ((1:) err1:  Xception; (2:) err2:  Xception2;)
+          oneway void testOneway ((1:) secondsToSleep:  I32;)
+        };
+        service SecondService {
+          STRING secondtestString ((1:) thing:  STRING;)
+        };
+        struct VersioningTestV1 {
+          (1:) begin_in_both:  I32;
+          (3:) old_string:  STRING;
+          (12:) end_in_both:  I32;
+        };
+        struct VersioningTestV2 {
+          (1:) begin_in_both:  I32;
+          (2:) newint:  I32;
+          (3:) newbyte:  I8;
+          (4:) newshort:  I16;
+          (5:) newlong:  I64;
+          (6:) newdouble:  DOUBLE;
+          (7:) newstruct:  Bonk;
+          (8:) newlist:  list< I32 >;
+          (9:) newset:  set< I32 >;
+          (10:) newmap:  map< I32, I32 >;
+          (11:) newstring:  STRING;
+          (12:) end_in_both:  I32;
+        };
+        struct ListTypeVersioningV1 {
+          (1:) myints:  list< I32 >;
+          (2:) hello:  STRING;
+        };
+        struct ListTypeVersioningV2 {
+          (1:) strings:  list< STRING >;
+          (2:) hello:  STRING;
+        };
+        struct GuessProtocolStruct {
+          (7:) map_field:  map< STRING, STRING >;
+        };
+        struct LargeDeltas {
+          (1:) b1:  Bools;
+          (10:) b10:  Bools;
+          (100:) b100:  Bools;
+          (500:) check_true:  BOOL;
+          (1000:) b1000:  Bools;
+          (1500:) check_false:  BOOL;
+          (2000:) vertwo2000:  VersioningTestV2;
+          (2500:) a_set2500:  set< STRING >;
+          (3000:) vertwo3000:  VersioningTestV2;
+          (4000:) big_numbers:  list< I32 >;
+        };
+        struct NestedListsI32x2 { (1:) integerlist:  list< list< I32 > >; };
+        struct NestedListsI32x3 {
+          (1:) integerlist:  list< list< list< I32 > > >;
+        };
+        struct NestedMixedx2 {
+          (1:) int_set_list:  list< set< I32 > >;
+          (2:) map_int_strset:  map< I32, set< STRING > >;
+          (3:) map_int_strset_list:  list< map< I32, set< STRING > > >;
+        };
+        struct ListBonks { (1:) bonk:  list< Bonk >; };
+        struct NestedListsBonk { (1:) bonk:  list< list< list< Bonk > > >; };
+        struct BoolTest {
+          (1:) b: optional BOOL := true;
+          (2:) s: optional STRING := "true";
+        };
+        struct StructA { (1:) s: required STRING; };
+        struct StructB {
+          (1:) aa: optional StructA;
+          (2:) ab: required StructA;
+        };
+        struct OptionalSetDefaultTest {
+          (1:) with_default: optional set< STRING > := ["test"];
+        };
+        struct OptionalBinary {
+          (1:) bin_set: optional set< BINARY > := {};
+          (2:) bin_map: optional map< BINARY, I32 > := {};
+        };]
+ }

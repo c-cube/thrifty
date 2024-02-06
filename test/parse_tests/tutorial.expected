@@ -1,0 +1,33 @@
+parse "tutorial.thrift"
+parsed ok
+content:
+{ headers: [include "shared.thrift"
+            namespace ("cpp", "tutorial")
+            namespace ("d", "tutorial")
+            namespace ("dart", "tutorial")
+            namespace ("java", "tutorial")
+            namespace ("php", "tutorial")
+            namespace ("perl", "tutorial")
+            namespace ("haxe", "tutorial")
+            namespace ("netstd", "tutorial")];
+ defs: [typedef MyInteger := I32;
+        const INT32CONSTANT : I32 := 9853;
+        const MAPCONSTANT : map< STRING, STRING > :=
+        {"hello": "world"; "goodnight": "moon";};
+        enum Operation { ADD = 1; SUBTRACT = 2; MULTIPLY = 3; DIVIDE = 4; };
+        struct Work {
+          (1:) num1:  I32 := 0;
+          (2:) num2:  I32;
+          (3:) op:  Operation;
+          (4:) comment: optional STRING;
+        };
+        exception InvalidOperation { (1:) whatOp:  I32; (2:) why:  STRING; };
+        service Calculator
+          extends shared.SharedService {
+          void ping ()
+          I32 add ((1:) num1:  I32; (2:) num2:  I32;)
+          I32 calculate ((1:) logid:  I32; (2:) w:  Work;)
+            throws ((1:) ouch:  InvalidOperation;)
+          oneway void zip ()
+        };]
+ }
